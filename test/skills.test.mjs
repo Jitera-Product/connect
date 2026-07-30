@@ -7,7 +7,7 @@ import { findUnknownTokens } from "../scripts/validate.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-export const SKILL_NAMES = ["jitera-memory"];
+export const SKILL_NAMES = ["jitera-memory", "jitera-specs"];
 
 export function parseFrontmatter(text) {
   const match = text.match(/^---\n([\s\S]*?)\n---\n/);
@@ -72,4 +72,14 @@ test("jitera-memory documents the recall retry ladder", () => {
 test("jitera-memory says what not to store", () => {
   const text = readFileSync(join(ROOT, "skills", "jitera-memory", "SKILL.md"), "utf8");
   assert.match(text, /## What not to store/);
+});
+
+test("jitera-specs requires searching for an existing spec first", () => {
+  const path = join(ROOT, "skills", "jitera-specs", "SKILL.md");
+  assert.match(readFileSync(path, "utf8"), /## Before implementing anything/);
+  assert.match(flowed(path), /resource_search/);
+});
+
+test("jitera-specs states which domains are writable", () => {
+  assert.match(flowed(join(ROOT, "skills", "jitera-specs", "SKILL.md")), /only writable domain/i);
 });
