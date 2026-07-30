@@ -21,23 +21,23 @@ function runExpectingFailure(args) {
 }
 
 test("cli defaults to production", () => {
-  const out = JSON.parse(run([]));
+  const out = JSON.parse(run(["--print"]));
   assert.equal(out.mcpUrl, "https://gateway-proxy.jitera.app/gateway/boost/mcp");
   assert.equal(out.apiBaseUrl, "https://gateway-proxy.jitera.app/gateway/boost/v1");
 });
 
 test("cli resolves a numbered pilot", () => {
-  const out = JSON.parse(run(["--env=studio-06"]));
+  const out = JSON.parse(run(["--print", "--env=studio-06"]));
   assert.equal(out.mcpUrl, "https://kong-proxy-pilot.jitera.app/gateway/boost-06/mcp");
 });
 
 test("cli resolves staging", () => {
-  const out = JSON.parse(run(["--env=studio-stage"]));
+  const out = JSON.parse(run(["--print", "--env=studio-stage"]));
   assert.equal(out.mcpUrl, "https://jitera-stage-pilot.jitera.app/gateway/boost/mcp");
 });
 
 test("cli exits 2 on an unknown environment", () => {
-  const { status, stderr } = runExpectingFailure(["--env=studio-banana"]);
+  const { status, stderr } = runExpectingFailure(["--print", "--env=studio-banana"]);
   assert.equal(status, 2);
   assert.match(stderr, /studio-banana/);
   assert.match(stderr, /studio-06/);
