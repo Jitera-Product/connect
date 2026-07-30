@@ -6,7 +6,7 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-start.mjs"],
+            "args": ["${CLAUDE_PLUGIN_ROOT}/dist/hooks/session-start.js"],
             "timeout": 10
           }
         ]
@@ -18,7 +18,7 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/user-prompt-submit.mjs"],
+            "args": ["${CLAUDE_PLUGIN_ROOT}/dist/hooks/user-prompt-submit.js"],
             "timeout": 15,
             "statusMessage": "Loading project memory"
           }
@@ -31,7 +31,7 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/stop.mjs"],
+            "args": ["${CLAUDE_PLUGIN_ROOT}/dist/hooks/stop.js"],
             "timeout": 10
           }
         ]

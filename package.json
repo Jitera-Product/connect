@@ -1,6 +1,6 @@
 {
   "name": "@jitera/connect",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Connect AI coding assistants to Jitera projects: documentation, source, and shared project memory",
   "license": "Apache-2.0",
@@ -20,11 +20,10 @@
     "node": ">=20"
   },
   "bin": {
-    "jitera-connect": "./bin/jitera-connect.mjs"
+    "jitera-connect": "./dist/bin/cli.js"
   },
   "files": [
-    "bin/",
-    "src/",
+    "dist/",
     "skills/",
     "hooks/",
     "content/",
@@ -36,7 +35,14 @@
     "access": "public"
   },
   "scripts": {
-    "test": "node --test \"test/**/*.test.mjs\"",
-    "validate": "node scripts/validate.mjs"
+    "build": "tsc",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "validate": "node src/bin/validate.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2"
   }
 }

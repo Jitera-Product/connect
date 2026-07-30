@@ -1,0 +1,1 @@
+{"version":3,"file":"session-marker.d.ts","sourceRoot":"","sources":["../src/session-marker.ts"],"names":[],"mappings":"AAOA,MAAM,MAAM,UAAU,GAAG,QAAQ,CAAC;AAElC,wBAAgB,UAAU,CAAC,SAAS,EAAE,MAAM,EAAE,IAAI,EAAE,UAAU,EAAE,IAAI,GAAE,MAAiB,GAAG,MAAM,CAG/F;AAED,wBAAgB,SAAS,CACvB,SAAS,EAAE,MAAM,GAAG,SAAS,EAC7B,IAAI,EAAE,UAAU,EAChB,IAAI,GAAE,MAAiB,GACtB,OAAO,CAWT"}
