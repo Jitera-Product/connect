@@ -3,14 +3,14 @@
 ## claude code
 
 ```
-/plugin marketplace add jitera/jitera-connect
+/plugin marketplace add jitera/connect
 /plugin install jitera-connect
 ```
 
 ## codex
 
 ```
-codex plugin marketplace add jitera/jitera-connect
+codex plugin marketplace add jitera/connect
 ```
 
 ## cursor
