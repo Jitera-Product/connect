@@ -25,8 +25,6 @@ export function parseFrontmatter(text) {
   return out;
 }
 
-// Skill bodies are hard-wrapped, so phrase assertions run against a
-// whitespace-collapsed copy — see test/instructions.test.mjs for the rationale.
 function flowed(path) {
   return readFileSync(path, "utf8").replace(/\s+/g, " ");
 }

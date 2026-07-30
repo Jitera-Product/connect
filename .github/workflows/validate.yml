@@ -23,9 +23,6 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
-      # The validator executable is `agentskills`, supplied by the `skills-ref`
-      # package. `uvx skills-ref validate` does not exist, despite what
-      # agentskills.io documents.
       - name: Agent Skills specification validator
         run: |
           for skill in skills/*/; do
