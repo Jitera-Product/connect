@@ -34,4 +34,4 @@ The validator executable is `agentskills`, provided by the `skills-ref` package.
 
 `jitera-boost` vendors `content/instructions.md` under `boost/agent_content/`,
 pinned by hash in `boost/agent_content/MANIFEST`. Change content here, then run
-`scripts/sync-agent-content.sh` in that repository.
+`.scripts/sync-agent-content.sh` in that repository.
