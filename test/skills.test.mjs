@@ -7,7 +7,7 @@ import { findUnknownTokens } from "../scripts/validate.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-export const SKILL_NAMES = ["jitera-memory", "jitera-specs"];
+export const SKILL_NAMES = ["jitera-memory", "jitera-specs", "jitera-context"];
 
 export function parseFrontmatter(text) {
   const match = text.match(/^---\n([\s\S]*?)\n---\n/);
@@ -82,4 +82,20 @@ test("jitera-specs requires searching for an existing spec first", () => {
 
 test("jitera-specs states which domains are writable", () => {
   assert.match(flowed(join(ROOT, "skills", "jitera-specs", "SKILL.md")), /only writable domain/i);
+});
+
+test("jitera-context documents all three domains", () => {
+  const text = readFileSync(join(ROOT, "skills", "jitera-context", "SKILL.md"), "utf8");
+  for (const domain of ["documents/", "sources/", "uploads/"]) {
+    assert.ok(text.includes(domain), `must document the ${domain} domain`);
+  }
+});
+
+test("jitera-context documents boolean content search", () => {
+  const text = readFileSync(join(ROOT, "skills", "jitera-context", "SKILL.md"), "utf8");
+  assert.match(text, /\(api OR rest\) AND controller/);
+});
+
+test("jitera-context documents PDF page addressing", () => {
+  assert.match(flowed(join(ROOT, "skills", "jitera-context", "SKILL.md")), /page/i);
 });
