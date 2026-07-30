@@ -1,12 +1,39 @@
 {
   "name": "@jitera/connect",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
-  "description": "Agent-facing skills and instructions for connecting coding assistants to Jitera",
+  "description": "Connect AI coding assistants to Jitera projects: documentation, source, and shared project memory",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jitera-Product/connect.git"
+  },
+  "keywords": [
+    "jitera",
+    "mcp",
+    "agent-skills",
+    "claude-code",
+    "codex",
+    "cursor"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "bin": {
     "jitera-connect": "./bin/jitera-connect.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "skills/",
+    "hooks/",
+    "content/",
+    "templates/",
+    ".claude-plugin/",
+    ".codex-plugin/"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.mjs\"",

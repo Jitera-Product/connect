@@ -3,25 +3,25 @@
 ## claude code
 
 ```
-/plugin marketplace add jitera/connect
+/plugin marketplace add jitera-product/connect
 /plugin install jitera-connect
 ```
 
 ## codex
 
 ```
-codex plugin marketplace add jitera/connect
+codex plugin marketplace add jitera-product/connect
 ```
 
 ## cursor
 
 ```
-npx @jitera/connect
+npx @jitera-product/connect
 ```
 
 ## pilot and staging environments
 
 ```
-npx @jitera/connect --env=studio-stage
-npx @jitera/connect --env=studio-06
+npx @jitera-product/connect --env=studio-stage
+npx @jitera-product/connect --env=studio-06
 ```
