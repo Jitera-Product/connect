@@ -5,6 +5,7 @@
   "author": {
     "name": "Jitera"
   },
+  "hooks": "./hooks/hooks.json",
   "mcpServers": {
     "jitera": {
       "type": "http",

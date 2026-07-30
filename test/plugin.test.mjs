@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -50,4 +50,27 @@ test("marketplace lists the plugin at the repository root", () => {
   const entry = mk.plugins.find((p) => p.name === "jitera-connect");
   assert.ok(entry, "marketplace must list jitera-connect");
   assert.equal(entry.source, "./");
+});
+
+test("hooks are declared for session start and stop", () => {
+  const hooks = readJson("hooks", "hooks.json").hooks;
+  assert.ok(hooks.SessionStart, "SessionStart hook is required");
+  assert.ok(hooks.Stop, "Stop hook is required");
+  assert.equal(hooks.PreCompact, undefined, "PreCompact cannot inject context");
+});
+
+test("hooks use exec form with a resolvable plugin-root path", () => {
+  const hooks = readJson("hooks", "hooks.json").hooks;
+  for (const event of ["SessionStart", "Stop"]) {
+    const entry = hooks[event][0].hooks[0];
+    assert.equal(entry.type, "command");
+    assert.equal(entry.command, "node");
+    assert.match(entry.args[0], /^\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/scripts\/.+\.mjs$/);
+    const relative = entry.args[0].replace("${CLAUDE_PLUGIN_ROOT}/", "");
+    assert.ok(existsSync(join(ROOT, relative)), `${relative} must exist`);
+  }
+});
+
+test("plugin manifest points at the hooks file", () => {
+  assert.equal(readJson(".claude-plugin", "plugin.json").hooks, "./hooks/hooks.json");
 });
