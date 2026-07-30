@@ -1,0 +1,14 @@
+{
+  "name": "jitera",
+  "description": "Connect AI coding assistants to Jitera projects: project documentation, source, and shared project memory.",
+  "owner": {
+    "name": "Jitera"
+  },
+  "plugins": [
+    {
+      "name": "jitera-connect",
+      "source": "./",
+      "description": "Connect this workspace to a Jitera project: read documentation and source, and keep project memory up to date."
+    }
+  ]
+}
