@@ -52,16 +52,29 @@ test("marketplace lists the plugin at the repository root", () => {
   assert.equal(entry.source, "./");
 });
 
-test("hooks are declared for session start and stop", () => {
+test("hooks are declared for session start, first prompt, and stop", () => {
   const hooks = readJson("hooks", "hooks.json").hooks;
   assert.ok(hooks.SessionStart, "SessionStart hook is required");
+  assert.ok(hooks.UserPromptSubmit, "UserPromptSubmit carries the real memory load");
   assert.ok(hooks.Stop, "Stop hook is required");
   assert.equal(hooks.PreCompact, undefined, "PreCompact cannot inject context");
 });
 
+test("every hook has a timeout well under the 600 second default", () => {
+  const hooks = readJson("hooks", "hooks.json").hooks;
+  for (const entries of Object.values(hooks)) {
+    for (const entry of entries) {
+      for (const h of entry.hooks) {
+        assert.ok(h.timeout, "a hook without a timeout can stall a session");
+        assert.ok(h.timeout <= 30, `timeout ${h.timeout}s is too long for a hook`);
+      }
+    }
+  }
+});
+
 test("hooks use exec form with a resolvable plugin-root path", () => {
   const hooks = readJson("hooks", "hooks.json").hooks;
-  for (const event of ["SessionStart", "Stop"]) {
+  for (const event of ["SessionStart", "UserPromptSubmit", "Stop"]) {
     const entry = hooks[event][0].hooks[0];
     assert.equal(entry.type, "command");
     assert.equal(entry.command, "node");
