@@ -71,8 +71,8 @@ test("hooks use exec form with a resolvable plugin-root path", () => {
   }
 });
 
-test("plugin manifest points at the hooks file", () => {
-  assert.equal(readJson(".claude-plugin", "plugin.json").hooks, "./hooks/hooks.json");
+test("plugin manifest does not declare hooks, which are loaded automatically", () => {
+  assert.equal(readJson(".claude-plugin", "plugin.json").hooks, undefined);
 });
 
 test("codex manifest declares identity and the skills directory", () => {
