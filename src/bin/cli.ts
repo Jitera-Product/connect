@@ -3,7 +3,9 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { cursor, type Adapter, type AdapterContext, type Scope } from "../adapters/cursor.ts";
+import { codex } from "../adapters/codex.ts";
+import { cursor } from "../adapters/cursor.ts";
+import type { Adapter, AdapterContext, Scope } from "../adapters/types.ts";
 import { MalformedConfigError } from "../mcp-config.ts";
 import { writeAgentsMd } from "../install/agents-md.ts";
 import { DEFAULT_BRAND } from "../install/render.ts";
@@ -15,7 +17,7 @@ import {
   resolveStudioUrl,
 } from "../environments.ts";
 
-const ADAPTERS: readonly Adapter[] = [cursor];
+const ADAPTERS: readonly Adapter[] = [cursor, codex];
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 interface Args {

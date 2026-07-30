@@ -1,45 +1,18 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import type { Adapter, AdapterContext, AdapterResult } from "./types.ts";
 import {
   mergeServer,
   readConfig,
   removeServer,
   writeConfig,
-  type ClientConfig,
   type ServerEntry,
 } from "../mcp-config.ts";
 
 export const SERVER_NAME = "jitera";
 const CONFIG_KEY = "mcpServers";
 const API_KEY_ENV = "JITERA_API_KEY";
-
-export type Scope = "project" | "user";
-
-export interface AdapterContext {
-  readonly scope: Scope;
-  readonly home: string;
-  readonly cwd: string;
-  readonly mcpUrl?: string;
-  readonly dryRun?: boolean;
-}
-
-export interface AdapterResult {
-  readonly path: string;
-  readonly config: ClientConfig;
-  readonly changed: boolean;
-}
-
-export interface Adapter {
-  readonly id: string;
-  readonly label: string;
-  readonly secretStrategy: "keychain" | "env" | "inline";
-  detect(context: Pick<AdapterContext, "home">): boolean;
-  mcpConfigPath(context: AdapterContext): string;
-  skillsDirs(context: AdapterContext): readonly string[];
-  install(context: AdapterContext): AdapterResult;
-  uninstall(context: AdapterContext): AdapterResult;
-}
 
 function serverEntry(mcpUrl: string): ServerEntry {
   return {
@@ -69,7 +42,7 @@ export const cursor: Adapter = {
     return [join(root, ".agents", "skills"), join(root, ".claude", "skills")];
   },
 
-  install(context) {
+  install(context: AdapterContext): AdapterResult {
     const path = this.mcpConfigPath(context);
     const before = readConfig(path);
     const after = mergeServer(before, CONFIG_KEY, SERVER_NAME, serverEntry(context.mcpUrl ?? ""));
@@ -77,7 +50,7 @@ export const cursor: Adapter = {
     return { path, config: after, changed: JSON.stringify(before) !== JSON.stringify(after) };
   },
 
-  uninstall(context) {
+  uninstall(context: AdapterContext): AdapterResult {
     const path = this.mcpConfigPath(context);
     const before = readConfig(path);
     const after = removeServer(before, CONFIG_KEY, SERVER_NAME);

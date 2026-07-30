@@ -2,13 +2,14 @@
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { codex } from "../adapters/codex.js";
 import { cursor } from "../adapters/cursor.js";
 import { MalformedConfigError } from "../mcp-config.js";
 import { writeAgentsMd } from "../install/agents-md.js";
 import { DEFAULT_BRAND } from "../install/render.js";
 import { installSkills, uninstallSkills } from "../install/skills.js";
 import { UnknownEnvironmentError, resolveApiBaseUrl, resolveMcpUrl, resolveStudioUrl, } from "../environments.js";
-const ADAPTERS = [cursor];
+const ADAPTERS = [cursor, codex];
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 function parseArgs(argv) {
     const args = { scope: "project", dryRun: false, uninstall: false, print: false, skipSkills: false, help: false };
