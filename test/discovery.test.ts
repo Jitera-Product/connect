@@ -6,6 +6,7 @@ import { DISCOVERY_PATHS, DiscoveryError, discoverDeployment } from "../src/disc
 const CONFIG = {
   mcpUrl: "https://kong-proxy-pilot.jitera.app/gateway/boost-04/mcp",
   apiBaseUrl: "https://kong-proxy-pilot.jitera.app/gateway/boost-04/v1",
+  automationUrl: "https://kong-proxy-pilot.jitera.app/gateway/automation-04/private",
   brand: "Jitera",
 };
 
@@ -76,6 +77,18 @@ test("a self hosted brand is carried through", async () => {
   });
   assert.equal(config.brand, "Acme AI");
   assert.equal(config.mcpUrl, "https://mcp.acme.internal/mcp");
+});
+
+test("a deployment that omits the automation url yields an empty string, not undefined", async () => {
+  const config = await discoverDeployment({
+    fetchImpl: fetchStub(() => ({ status: 200, body: { mcpUrl: "https://x/mcp" } })),
+  });
+  assert.equal(config.automationUrl, "");
+});
+
+test("the automation url is carried through for sign-in", async () => {
+  const config = await discoverDeployment({ fetchImpl: fetchStub(() => ({ status: 200, body: CONFIG })) });
+  assert.equal(config.automationUrl, CONFIG.automationUrl);
 });
 
 test("a missing brand falls back rather than rendering empty", async () => {

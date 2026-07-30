@@ -5,6 +5,7 @@ export const DISCOVERY_PATHS = ["/p/jitera-connect.json", "/jitera-connect.json"
 export interface DeploymentConfig {
   readonly mcpUrl: string;
   readonly apiBaseUrl: string;
+  readonly automationUrl: string;
   readonly brand: string;
 }
 
@@ -64,10 +65,12 @@ export async function discoverDeployment({
         lastReason = "the response did not contain an mcpUrl";
         continue;
       }
+      const record = payload as unknown as Record<string, unknown>;
       return {
         mcpUrl: payload.mcpUrl,
-        apiBaseUrl: typeof payload.apiBaseUrl === "string" ? payload.apiBaseUrl : "",
-        brand: typeof payload.brand === "string" && payload.brand ? payload.brand : "Jitera",
+        apiBaseUrl: typeof record["apiBaseUrl"] === "string" ? record["apiBaseUrl"] : "",
+        automationUrl: typeof record["automationUrl"] === "string" ? record["automationUrl"] : "",
+        brand: typeof record["brand"] === "string" && record["brand"] ? record["brand"] : "Jitera",
       };
     } catch (error) {
       const cause = error as Error;

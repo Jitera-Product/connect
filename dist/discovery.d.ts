@@ -2,6 +2,7 @@ export declare const DISCOVERY_PATHS: readonly ["/p/jitera-connect.json", "/jite
 export interface DeploymentConfig {
     readonly mcpUrl: string;
     readonly apiBaseUrl: string;
+    readonly automationUrl: string;
     readonly brand: string;
 }
 export declare class DiscoveryError extends Error {

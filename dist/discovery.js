@@ -39,10 +39,12 @@ export async function discoverDeployment({ environment, studioUrl: studioOverrid
                 lastReason = "the response did not contain an mcpUrl";
                 continue;
             }
+            const record = payload;
             return {
                 mcpUrl: payload.mcpUrl,
-                apiBaseUrl: typeof payload.apiBaseUrl === "string" ? payload.apiBaseUrl : "",
-                brand: typeof payload.brand === "string" && payload.brand ? payload.brand : "Jitera",
+                apiBaseUrl: typeof record["apiBaseUrl"] === "string" ? record["apiBaseUrl"] : "",
+                automationUrl: typeof record["automationUrl"] === "string" ? record["automationUrl"] : "",
+                brand: typeof record["brand"] === "string" && record["brand"] ? record["brand"] : "Jitera",
             };
         }
         catch (error) {
