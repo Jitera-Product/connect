@@ -15,11 +15,11 @@ export interface RunResult {
 
 export function runNode(
   scriptRelPath: string,
-  options: { input?: unknown; env?: NodeJS.ProcessEnv; isolatedTmp?: boolean } = {}
+  options: { input?: unknown; env?: NodeJS.ProcessEnv; args?: readonly string[]; isolatedTmp?: boolean } = {}
 ): Promise<RunResult> {
-  const { input, env = {}, isolatedTmp = true } = options;
+  const { input, env = {}, args = [], isolatedTmp = true } = options;
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [join(ROOT, scriptRelPath)], {
+    const child = spawn(process.execPath, [join(ROOT, scriptRelPath), ...args], {
       env: {
         ...process.env,
         ...(isolatedTmp ? { TMPDIR: mkdtempSync(join(tmpdir(), "jc-test-")) } : {}),

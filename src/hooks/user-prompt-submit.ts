@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { callTool, McpCallError } from "../mcp-client.ts";
-import { resolveMcpUrl, UnknownEnvironmentError } from "../environments.ts";
+import { discoverDeployment } from "../discovery.ts";
 import { emitContext, readHookInput } from "../hook-io.ts";
 import { claimOnce } from "../session-marker.ts";
 
@@ -15,14 +15,20 @@ const apiKey = process.env["CLAUDE_PLUGIN_OPTION_JITERA_API_KEY"] ?? "";
 if (!apiKey) process.exit(0);
 
 let url: string;
-try {
-  url =
-    process.env["JITERA_MCP_URL"] ??
-    resolveMcpUrl(process.env["CLAUDE_PLUGIN_OPTION_ENVIRONMENT"]);
-} catch (error) {
-  const message = error instanceof UnknownEnvironmentError ? error.message : String(error);
-  process.stderr.write(`jitera-connect: ${message}\n`);
-  process.exit(0);
+const override = process.env["JITERA_MCP_URL"];
+if (override) {
+  url = override;
+} else {
+  try {
+    const deployment = await discoverDeployment({
+      environment: process.env["CLAUDE_PLUGIN_OPTION_ENVIRONMENT"],
+      studioUrl: process.env["JITERA_STUDIO_URL"],
+    });
+    url = deployment.mcpUrl;
+  } catch (error) {
+    process.stderr.write(`jitera-connect: ${(error as Error).message}\n`);
+    process.exit(0);
+  }
 }
 
 let memory: string;

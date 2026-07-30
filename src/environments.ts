@@ -1,7 +1,3 @@
-const PRODUCTION_GATEWAY = "https://gateway-proxy.jitera.app";
-const STAGE_GATEWAY = "https://jitera-stage-pilot.jitera.app";
-const PILOT_GATEWAY = "https://kong-proxy-pilot.jitera.app";
-
 const PRODUCTION_STUDIO = "https://studio.jitera.app";
 const PILOT_DOMAIN = "pilot.jitera.app";
 
@@ -50,25 +46,6 @@ export function parseEnvironment(environment?: string | null): Deployment {
   }
 
   throw new UnknownEnvironmentError(environment);
-}
-
-function boostBase(deployment: Deployment): string {
-  switch (deployment.kind) {
-    case "production":
-      return `${PRODUCTION_GATEWAY}/gateway/boost`;
-    case "stage":
-      return `${STAGE_GATEWAY}/gateway/boost`;
-    case "pilot":
-      return `${PILOT_GATEWAY}/gateway/boost-${deployment.instance}`;
-  }
-}
-
-export function resolveMcpUrl(environment?: string | null): string {
-  return `${boostBase(parseEnvironment(environment))}/mcp`;
-}
-
-export function resolveApiBaseUrl(environment?: string | null): string {
-  return `${boostBase(parseEnvironment(environment))}/v1`;
 }
 
 export function resolveStudioUrl(environment?: string | null): string {

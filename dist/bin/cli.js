@@ -8,7 +8,8 @@ import { MalformedConfigError } from "../mcp-config.js";
 import { writeAgentsMd } from "../install/agents-md.js";
 import { DEFAULT_BRAND } from "../install/render.js";
 import { installSkills, uninstallSkills } from "../install/skills.js";
-import { UnknownEnvironmentError, resolveApiBaseUrl, resolveMcpUrl, resolveStudioUrl, } from "../environments.js";
+import { DiscoveryError, discoverDeployment } from "../discovery.js";
+import { UnknownEnvironmentError, resolveStudioUrl } from "../environments.js";
 const ADAPTERS = [cursor, codex];
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 function parseArgs(argv) {
@@ -28,6 +29,8 @@ function parseArgs(argv) {
             args.print = true;
         else if (arg === "--skip-skills")
             args.skipSkills = true;
+        else if (arg.startsWith("--mcp-url="))
+            args.mcpUrl = arg.slice("--mcp-url=".length);
         else if (arg === "--help" || arg === "-h")
             args.help = true;
         else
@@ -47,6 +50,7 @@ const USAGE = [
     "  --uninstall          remove the jitera server",
     "  --print              print resolved endpoints and exit",
     "  --skip-skills        write mcp config only, no skills or AGENTS.md",
+    "  --mcp-url=<url>      bypass discovery, for air-gapped or self-hosted setups",
 ].join("\n");
 const args = parseArgs(process.argv.slice(2));
 if (args.help) {
@@ -57,12 +61,8 @@ if (args.unknown) {
     process.stderr.write(`error: unrecognised argument "${args.unknown}"\n${USAGE}\n`);
     process.exit(2);
 }
-let mcpUrl;
-let apiBaseUrl;
 let studioUrl;
 try {
-    mcpUrl = resolveMcpUrl(args.environment);
-    apiBaseUrl = resolveApiBaseUrl(args.environment);
     studioUrl = resolveStudioUrl(args.environment);
 }
 catch (error) {
@@ -71,6 +71,29 @@ catch (error) {
         process.exit(2);
     }
     throw error;
+}
+let mcpUrl;
+let apiBaseUrl;
+let brand;
+if (args.mcpUrl) {
+    mcpUrl = args.mcpUrl;
+    apiBaseUrl = "";
+    brand = DEFAULT_BRAND;
+}
+else {
+    try {
+        const deployment = await discoverDeployment({ environment: args.environment, studioUrl: process.env["JITERA_STUDIO_URL"] });
+        mcpUrl = deployment.mcpUrl;
+        apiBaseUrl = deployment.apiBaseUrl;
+        brand = deployment.brand;
+    }
+    catch (error) {
+        if (error instanceof DiscoveryError) {
+            process.stderr.write(`error: ${error.message}\n`);
+            process.exit(1);
+        }
+        throw error;
+    }
 }
 if (args.print) {
     process.stdout.write(`${JSON.stringify({ mcpUrl, apiBaseUrl, studioUrl }, undefined, 2)}\n`);
@@ -110,7 +133,7 @@ for (const { adapter, result } of results) {
     process.stdout.write(`${adapter.label}: ${result.changed ? verb : "already up to date in"} ${result.path}\n`);
 }
 if (!args.skipSkills) {
-    const values = { BRAND: DEFAULT_BRAND };
+    const values = { BRAND: brand };
     const targetDirs = [...new Set(detected.flatMap((adapter) => adapter.skillsDirs(context)))];
     const skills = args.uninstall
         ? uninstallSkills({ packageRoot: PACKAGE_ROOT, targetDirs, dryRun: args.dryRun })

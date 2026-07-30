@@ -10,12 +10,8 @@ import { MalformedConfigError } from "../mcp-config.ts";
 import { writeAgentsMd } from "../install/agents-md.ts";
 import { DEFAULT_BRAND } from "../install/render.ts";
 import { installSkills, uninstallSkills } from "../install/skills.ts";
-import {
-  UnknownEnvironmentError,
-  resolveApiBaseUrl,
-  resolveMcpUrl,
-  resolveStudioUrl,
-} from "../environments.ts";
+import { DiscoveryError, discoverDeployment } from "../discovery.ts";
+import { UnknownEnvironmentError, resolveStudioUrl } from "../environments.ts";
 
 const ADAPTERS: readonly Adapter[] = [cursor, codex];
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -27,6 +23,7 @@ interface Args {
   uninstall: boolean;
   print: boolean;
   skipSkills: boolean;
+  mcpUrl?: string;
   help: boolean;
   unknown?: string;
 }
@@ -41,6 +38,7 @@ function parseArgs(argv: readonly string[]): Args {
     else if (arg === "--project") args.scope = "project";
     else if (arg === "--print") args.print = true;
   else if (arg === "--skip-skills") args.skipSkills = true;
+  else if (arg.startsWith("--mcp-url=")) args.mcpUrl = arg.slice("--mcp-url=".length);
     else if (arg === "--help" || arg === "-h") args.help = true;
     else args.unknown = arg;
   }
@@ -59,6 +57,7 @@ const USAGE = [
   "  --uninstall          remove the jitera server",
   "  --print              print resolved endpoints and exit",
   "  --skip-skills        write mcp config only, no skills or AGENTS.md",
+  "  --mcp-url=<url>      bypass discovery, for air-gapped or self-hosted setups",
 ].join("\n");
 
 const args = parseArgs(process.argv.slice(2));
@@ -73,12 +72,8 @@ if (args.unknown) {
   process.exit(2);
 }
 
-let mcpUrl: string;
-let apiBaseUrl: string;
 let studioUrl: string;
 try {
-  mcpUrl = resolveMcpUrl(args.environment);
-  apiBaseUrl = resolveApiBaseUrl(args.environment);
   studioUrl = resolveStudioUrl(args.environment);
 } catch (error) {
   if (error instanceof UnknownEnvironmentError) {
@@ -86,6 +81,28 @@ try {
     process.exit(2);
   }
   throw error;
+}
+
+let mcpUrl: string;
+let apiBaseUrl: string;
+let brand: string;
+if (args.mcpUrl) {
+  mcpUrl = args.mcpUrl;
+  apiBaseUrl = "";
+  brand = DEFAULT_BRAND;
+} else {
+  try {
+    const deployment = await discoverDeployment({ environment: args.environment, studioUrl: process.env["JITERA_STUDIO_URL"] });
+    mcpUrl = deployment.mcpUrl;
+    apiBaseUrl = deployment.apiBaseUrl;
+    brand = deployment.brand;
+  } catch (error) {
+    if (error instanceof DiscoveryError) {
+      process.stderr.write(`error: ${error.message}\n`);
+      process.exit(1);
+    }
+    throw error;
+  }
 }
 
 if (args.print) {
@@ -135,7 +152,7 @@ for (const { adapter, result } of results) {
 }
 
 if (!args.skipSkills) {
-  const values = { BRAND: DEFAULT_BRAND };
+  const values = { BRAND: brand };
   const targetDirs = [...new Set(detected.flatMap((adapter) => adapter.skillsDirs(context)))];
 
   const skills = args.uninstall

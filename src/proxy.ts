@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
 
-import { resolveMcpUrl } from "./environments.ts";
+import { discoverDeployment } from "./discovery.ts";
 import { McpCallError, postRpc, type JsonRpcRequest } from "./mcp-client.ts";
 
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -60,9 +60,15 @@ export async function runProxy(
   }
 }
 
-export function configFromEnvironment(env: NodeJS.ProcessEnv): ProxyConfig {
+export async function configFromEnvironment(env: NodeJS.ProcessEnv): Promise<ProxyConfig> {
   const apiKey = env["JITERA_API_KEY"] ?? "";
-  const environment = env["JITERA_ENVIRONMENT"] ?? "";
   const override = env["JITERA_MCP_URL"] ?? "";
-  return { url: override || resolveMcpUrl(environment), apiKey };
+  if (override) return { url: override, apiKey };
+
+  const environment = env["JITERA_ENVIRONMENT"] ?? "";
+  const deployment = await discoverDeployment({
+    environment,
+    studioUrl: env["JITERA_STUDIO_URL"],
+  });
+  return { url: deployment.mcpUrl, apiKey };
 }

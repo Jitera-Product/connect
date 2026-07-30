@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline";
-import { resolveMcpUrl } from "./environments.js";
+import { discoverDeployment } from "./discovery.js";
 import { McpCallError, postRpc } from "./mcp-client.js";
 const REQUEST_TIMEOUT_MS = 30_000;
 function isNotification(request) {
@@ -39,10 +39,16 @@ export async function runProxy({ url, apiKey }, { input, output, log }) {
         }
     }
 }
-export function configFromEnvironment(env) {
+export async function configFromEnvironment(env) {
     const apiKey = env["JITERA_API_KEY"] ?? "";
-    const environment = env["JITERA_ENVIRONMENT"] ?? "";
     const override = env["JITERA_MCP_URL"] ?? "";
-    return { url: override || resolveMcpUrl(environment), apiKey };
+    if (override)
+        return { url: override, apiKey };
+    const environment = env["JITERA_ENVIRONMENT"] ?? "";
+    const deployment = await discoverDeployment({
+        environment,
+        studioUrl: env["JITERA_STUDIO_URL"],
+    });
+    return { url: deployment.mcpUrl, apiKey };
 }
 //# sourceMappingURL=proxy.js.map

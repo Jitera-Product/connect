@@ -132,30 +132,18 @@ test("blank lines are ignored", async () => {
   await s.close();
 });
 
-test("config resolves the url from an environment name", () => {
-  const config = configFromEnvironment({ JITERA_ENVIRONMENT: "studio-04", JITERA_API_KEY: "k" });
-  assert.equal(config.url, "https://kong-proxy-pilot.jitera.app/gateway/boost-04/mcp");
-  assert.equal(config.apiKey, "k");
-});
-
-test("config defaults to production with no environment set", () => {
-  assert.equal(
-    configFromEnvironment({ JITERA_API_KEY: "k" }).url,
-    "https://gateway-proxy.jitera.app/gateway/boost/mcp"
-  );
-});
-
-test("an explicit url override wins over the environment name", () => {
-  const config = configFromEnvironment({
+test("an explicit url override skips discovery entirely", async () => {
+  const config = await configFromEnvironment({
     JITERA_ENVIRONMENT: "studio-04",
     JITERA_MCP_URL: "https://self-hosted.example.com/mcp",
     JITERA_API_KEY: "k",
   });
   assert.equal(config.url, "https://self-hosted.example.com/mcp");
+  assert.equal(config.apiKey, "k");
 });
 
-test("an unknown environment is rejected before any connection is attempted", () => {
-  assert.throws(
+test("an unknown environment is rejected before any connection is attempted", async () => {
+  await assert.rejects(
     () => configFromEnvironment({ JITERA_ENVIRONMENT: "studio-banana", JITERA_API_KEY: "k" }),
     UnknownEnvironmentError
   );

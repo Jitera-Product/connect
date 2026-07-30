@@ -1,55 +1,77 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const CLI = join(ROOT, "dist", "bin", "cli.js");
+import { runNode, stubServer, type StubServer } from "./helpers.ts";
 
-function run(args: readonly string[]): string {
-  return execFileSync(process.execPath, [CLI, ...args], { encoding: "utf8" });
+const CLI = "dist/bin/cli.js";
+
+const DEPLOYMENT = {
+  mcpUrl: "https://kong-proxy-pilot.jitera.app/gateway/boost-04/mcp",
+  apiBaseUrl: "https://kong-proxy-pilot.jitera.app/gateway/boost-04/v1",
+  brand: "Jitera",
+};
+
+function studioStub(config: Record<string, unknown> = DEPLOYMENT): Promise<StubServer> {
+  return stubServer((_body, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(config));
+  });
 }
 
-function runExpectingFailure(args: readonly string[]): { status: number; stderr: string } {
-  try {
-    execFileSync(process.execPath, [CLI, ...args], { encoding: "utf8", stdio: "pipe" });
-  } catch (error) {
-    const failure = error as { status: number; stderr: string };
-    return { status: failure.status, stderr: failure.stderr };
-  }
-  throw new Error("expected the cli to exit non-zero");
+function studioUrlOf(server: StubServer): string {
+  return server.url.replace(/\/mcp$/, "");
 }
 
-test("cli defaults to production", () => {
-  const out = JSON.parse(run(["--print"]));
-  assert.equal(out.mcpUrl, "https://gateway-proxy.jitera.app/gateway/boost/mcp");
-  assert.equal(out.apiBaseUrl, "https://gateway-proxy.jitera.app/gateway/boost/v1");
+test("cli prints the endpoints the deployment declares", async () => {
+  const studio = await studioStub();
+  const { stdout, code } = await runNode(CLI, {
+    args: ["--print", "--env=studio-04"],
+    env: { JITERA_STUDIO_URL: studioUrlOf(studio) },
+  });
+  assert.equal(code, 0);
+  const parsed = JSON.parse(stdout) as { mcpUrl: string; studioUrl: string };
+  assert.equal(parsed.mcpUrl, DEPLOYMENT.mcpUrl);
+  assert.equal(parsed.studioUrl, "https://studio-04.pilot.jitera.app");
+  await studio.close();
 });
 
-test("cli resolves a numbered pilot", () => {
-  const out = JSON.parse(run(["--print", "--env=studio-06"]));
-  assert.equal(out.mcpUrl, "https://kong-proxy-pilot.jitera.app/gateway/boost-06/mcp");
+test("cli reports which studio it could not reach", async () => {
+  const studio = await studioStub();
+  const dead = studioUrlOf(studio);
+  await studio.close();
+  const { stderr, code } = await runNode(CLI, {
+    args: ["--print", "--env=studio-04"],
+    env: { JITERA_STUDIO_URL: dead },
+  });
+  assert.equal(code, 1);
+  assert.match(stderr, /could not read the deployment configuration/);
+  assert.match(stderr, /--mcp-url/);
 });
 
-test("cli resolves staging", () => {
-  const out = JSON.parse(run(["--print", "--env=studio-stage"]));
-  assert.equal(out.mcpUrl, "https://jitera-stage-pilot.jitera.app/gateway/boost/mcp");
-});
-
-test("cli exits 2 on an unknown environment", () => {
-  const { status, stderr } = runExpectingFailure(["--print", "--env=studio-banana"]);
-  assert.equal(status, 2);
+test("cli exits 2 on an unknown environment without touching the network", async () => {
+  const { stderr, code } = await runNode(CLI, { args: ["--print", "--env=studio-banana"] });
+  assert.equal(code, 2);
   assert.match(stderr, /studio-banana/);
   assert.match(stderr, /studio-06/);
 });
 
-test("cli exits 2 on an unrecognised argument", () => {
-  const { status, stderr } = runExpectingFailure(["--pilot=06"]);
-  assert.equal(status, 2);
+test("cli exits 2 on an unrecognised argument", async () => {
+  const { stderr, code } = await runNode(CLI, { args: ["--pilot=06"] });
+  assert.equal(code, 2);
   assert.match(stderr, /unrecognised argument/);
 });
 
-test("cli prints usage on --help", () => {
-  assert.match(run(["--help"]), /--env=studio-stage/);
+test("cli prints usage on --help", async () => {
+  const { stdout } = await runNode(CLI, { args: ["--help"] });
+  assert.match(stdout, /--env=studio-stage/);
+  assert.match(stdout, /--mcp-url=/);
+});
+
+test("an explicit mcp url bypasses discovery entirely", async () => {
+  const { stdout, code } = await runNode(CLI, {
+    args: ["--print", "--mcp-url=https://self-hosted.example.com/mcp"],
+    env: { JITERA_STUDIO_URL: "http://127.0.0.1:1" },
+  });
+  assert.equal(code, 0);
+  assert.equal((JSON.parse(stdout) as { mcpUrl: string }).mcpUrl, "https://self-hosted.example.com/mcp");
 });

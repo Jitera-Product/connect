@@ -14,7 +14,5 @@ export declare class UnknownEnvironmentError extends Error {
     constructor(value: unknown);
 }
 export declare function parseEnvironment(environment?: string | null): Deployment;
-export declare function resolveMcpUrl(environment?: string | null): string;
-export declare function resolveApiBaseUrl(environment?: string | null): string;
 export declare function resolveStudioUrl(environment?: string | null): string;
 //# sourceMappingURL=environments.d.ts.map

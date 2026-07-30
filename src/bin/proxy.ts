@@ -1,20 +1,21 @@
 #!/usr/bin/env node
+import { DiscoveryError } from "../discovery.ts";
 import { UnknownEnvironmentError } from "../environments.ts";
 import { configFromEnvironment, runProxy } from "../proxy.ts";
 
-let config;
-try {
-  config = configFromEnvironment(process.env);
-} catch (error) {
-  const message = error instanceof UnknownEnvironmentError ? error.message : String(error);
-  process.stderr.write(`jitera-connect proxy: ${message}\n`);
-  process.exit(2);
-}
-
-if (!config.apiKey) {
+if (!process.env["JITERA_API_KEY"]) {
   process.stderr.write(
     "jitera-connect proxy: no api key configured. Run /plugin configure jitera-connect.\n"
   );
+  process.exit(2);
+}
+
+let config;
+try {
+  config = await configFromEnvironment(process.env);
+} catch (error) {
+  const known = error instanceof UnknownEnvironmentError || error instanceof DiscoveryError;
+  process.stderr.write(`jitera-connect proxy: ${known ? (error as Error).message : String(error)}\n`);
   process.exit(2);
 }
 
