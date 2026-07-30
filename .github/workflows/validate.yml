@@ -21,6 +21,9 @@ jobs:
       - name: Budget and template-token lint
         run: npm run validate
 
+      - name: Plugin and marketplace manifest validation
+        run: npx --yes @anthropic-ai/claude-code plugin validate . --strict
+
       - uses: astral-sh/setup-uv@v5
 
       - name: Agent Skills specification validator
