@@ -1,11 +1,17 @@
 #!/usr/bin/env node
 import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { cursor } from "../adapters/cursor.js";
 import { MalformedConfigError } from "../mcp-config.js";
+import { writeAgentsMd } from "../install/agents-md.js";
+import { DEFAULT_BRAND } from "../install/render.js";
+import { installSkills, uninstallSkills } from "../install/skills.js";
 import { UnknownEnvironmentError, resolveApiBaseUrl, resolveMcpUrl, resolveStudioUrl, } from "../environments.js";
 const ADAPTERS = [cursor];
+const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 function parseArgs(argv) {
-    const args = { scope: "project", dryRun: false, uninstall: false, print: false, help: false };
+    const args = { scope: "project", dryRun: false, uninstall: false, print: false, skipSkills: false, help: false };
     for (const arg of argv) {
         if (arg.startsWith("--env="))
             args.environment = arg.slice("--env=".length);
@@ -19,6 +25,8 @@ function parseArgs(argv) {
             args.scope = "project";
         else if (arg === "--print")
             args.print = true;
+        else if (arg === "--skip-skills")
+            args.skipSkills = true;
         else if (arg === "--help" || arg === "-h")
             args.help = true;
         else
@@ -37,6 +45,7 @@ const USAGE = [
     "  --dry-run            report what would change without writing",
     "  --uninstall          remove the jitera server",
     "  --print              print resolved endpoints and exit",
+    "  --skip-skills        write mcp config only, no skills or AGENTS.md",
 ].join("\n");
 const args = parseArgs(process.argv.slice(2));
 if (args.help) {
@@ -98,6 +107,28 @@ for (const adapter of detected) {
 const verb = args.uninstall ? "removed from" : "written to";
 for (const { adapter, result } of results) {
     process.stdout.write(`${adapter.label}: ${result.changed ? verb : "already up to date in"} ${result.path}\n`);
+}
+if (!args.skipSkills) {
+    const values = { BRAND: DEFAULT_BRAND };
+    const targetDirs = [...new Set(detected.flatMap((adapter) => adapter.skillsDirs(context)))];
+    const skills = args.uninstall
+        ? uninstallSkills({ packageRoot: PACKAGE_ROOT, targetDirs, dryRun: args.dryRun })
+        : installSkills({ packageRoot: PACKAGE_ROOT, targetDirs, values, dryRun: args.dryRun });
+    const skillVerb = args.uninstall ? "removed from" : "written to";
+    process.stdout.write(skills.changed
+        ? `Skills: ${skills.skills.length} ${skillVerb} ${targetDirs.join(", ")}\n`
+        : `Skills: already up to date in ${targetDirs.join(", ")}\n`);
+    if (!args.uninstall) {
+        const agents = writeAgentsMd({
+            packageRoot: PACKAGE_ROOT,
+            projectRoot: context.cwd,
+            values,
+            dryRun: args.dryRun,
+        });
+        process.stdout.write(agents.changed
+            ? `Instructions: ${agents.agents.action} block in ${agents.agentsPath}\n`
+            : `Instructions: already up to date in ${agents.agentsPath}\n`);
+    }
 }
 if (args.dryRun) {
     process.stdout.write("\ndry run, nothing was written\n");
