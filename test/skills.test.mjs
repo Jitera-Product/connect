@@ -7,7 +7,12 @@ import { findUnknownTokens } from "../scripts/validate.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-export const SKILL_NAMES = ["jitera-memory", "jitera-specs", "jitera-context"];
+export const SKILL_NAMES = [
+  "jitera-memory",
+  "jitera-specs",
+  "jitera-context",
+  "jitera-setup",
+];
 
 export function parseFrontmatter(text) {
   const match = text.match(/^---\n([\s\S]*?)\n---\n/);
@@ -98,4 +103,17 @@ test("jitera-context documents boolean content search", () => {
 
 test("jitera-context documents PDF page addressing", () => {
   assert.match(flowed(join(ROOT, "skills", "jitera-context", "SKILL.md")), /page/i);
+});
+
+test("jitera-setup forbids retrying non-transient failures", () => {
+  const text = flowed(join(ROOT, "skills", "jitera-setup", "SKILL.md"));
+  assert.match(text, /Do not retry/i);
+  assert.match(text, /neither is transient/i);
+});
+
+test("jitera-setup distinguishes missing tools from permission errors", () => {
+  assert.match(
+    flowed(join(ROOT, "skills", "jitera-setup", "SKILL.md")),
+    /not a permissions problem/i
+  );
 });
