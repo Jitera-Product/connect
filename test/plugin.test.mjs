@@ -74,3 +74,24 @@ test("hooks use exec form with a resolvable plugin-root path", () => {
 test("plugin manifest points at the hooks file", () => {
   assert.equal(readJson(".claude-plugin", "plugin.json").hooks, "./hooks/hooks.json");
 });
+
+test("codex manifest declares identity and the skills directory", () => {
+  const m = readJson(".codex-plugin", "plugin.json");
+  assert.equal(m.name, "jitera-connect");
+  assert.ok(m.version);
+  assert.ok(m.description);
+  assert.equal(m.skills, "./skills/");
+});
+
+test("codex and claude manifests agree on name and version", () => {
+  const codex = readJson(".codex-plugin", "plugin.json");
+  const claude = readJson(".claude-plugin", "plugin.json");
+  assert.equal(codex.name, claude.name);
+  assert.equal(codex.version, claude.version);
+});
+
+test("codex marketplace lists the plugin", () => {
+  const mk = readJson(".agents", "plugins", "marketplace.json");
+  const entry = mk.plugins.find((p) => p.name === "jitera-connect");
+  assert.ok(entry, "codex marketplace must list jitera-connect");
+});
