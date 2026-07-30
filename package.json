@@ -1,0 +1,12 @@
+{
+  "name": "@jitera/connect",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent-facing skills and instructions for connecting coding assistants to Jitera",
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "validate": "node scripts/validate.mjs"
+  }
+}
