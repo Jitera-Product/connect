@@ -1,0 +1,35 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Budget and template-token lint
+        run: npm run validate
+
+      - uses: astral-sh/setup-uv@v5
+
+      # The validator executable is `agentskills`, supplied by the `skills-ref`
+      # package. `uvx skills-ref validate` does not exist, despite what
+      # agentskills.io documents.
+      - name: Agent Skills specification validator
+        run: |
+          for skill in skills/*/; do
+            echo "::group::$skill"
+            uvx --from skills-ref agentskills validate "$skill"
+            echo "::endgroup::"
+          done
