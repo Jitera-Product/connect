@@ -40,11 +40,26 @@ function main() {
     }
   }
 
+  const files = [];
+
+  const contentDir = join(ROOT, "content");
+  if (existsSync(contentDir)) {
+    for (const name of readdirSync(contentDir)) {
+      if (name.endsWith(".md")) files.push(join(contentDir, name));
+    }
+  }
+
   const skillsDir = join(ROOT, "skills");
-  const files = [instructionsPath];
   if (existsSync(skillsDir)) {
     for (const name of readdirSync(skillsDir)) {
       files.push(join(skillsDir, name, "SKILL.md"));
+    }
+  }
+
+  const templatesDir = join(ROOT, "templates");
+  if (existsSync(templatesDir)) {
+    for (const name of readdirSync(templatesDir)) {
+      files.push(join(templatesDir, name));
     }
   }
 
