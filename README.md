@@ -15,6 +15,16 @@ For a pilot or staging environment:
 npx @jitera/connect login --env=studio-05 --install
 ```
 
+## choosing what to connect
+
+`login` asks which organisation, then which project. It only offers projects you
+can create an api key on. Skip either prompt:
+
+```
+npx @jitera/connect login --org=<slug>
+npx @jitera/connect login --project=<uuid>
+```
+
 ## claude code
 
 ```

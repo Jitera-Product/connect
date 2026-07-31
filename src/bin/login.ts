@@ -8,7 +8,14 @@ import {
   pollForAccessToken,
   requestDeviceAuthorization,
 } from "../device-flow.ts";
-import { GraphqlError, createApiKey, listProjects, type McpAccess } from "../graphql.ts";
+import {
+  GraphqlError,
+  createApiKey,
+  listOrganisations,
+  listProjects,
+  type McpAccess,
+  type Organisation,
+} from "../graphql.ts";
 import { installClaudeCodePlugin } from "../install/claude-code.ts";
 import { writeAgentsMd } from "../install/agents-md.ts";
 import { installSkills } from "../install/skills.ts";
@@ -22,6 +29,7 @@ interface Args {
   environment?: string;
   access: McpAccess;
   keyName: string;
+  organisation?: string;
   project?: string;
   json: boolean;
   install: boolean;
@@ -33,7 +41,8 @@ const USAGE = [
   "usage: npx @jitera/connect login [--env=<environment>] [options]",
   "",
   "  --env=studio-04      target a pilot; omit for production",
-  "  --project=<uuid>     skip the project prompt",
+  "  --org=<slug>         skip the organisation prompt",
+  "  --project=<uuid>     skip the organisation and project prompts",
   "  --read-only          create a read-only key (default is read + write)",
   "  --name=<name>        name for the created key",
   "  --json               print the result as json",
@@ -45,6 +54,7 @@ function parseArgs(argv: readonly string[]): Args {
   for (const arg of argv) {
     if (arg === "login") continue;
     else if (arg.startsWith("--env=")) args.environment = arg.slice("--env=".length);
+    else if (arg.startsWith("--org=")) args.organisation = arg.slice("--org=".length);
     else if (arg.startsWith("--project=")) args.project = arg.slice("--project=".length);
     else if (arg.startsWith("--name=")) args.keyName = arg.slice("--name=".length);
     else if (arg === "--read-only") args.access = "read";
@@ -118,31 +128,77 @@ try {
 
 const transport = { automationUrl, accessToken };
 
+async function choose<T>(
+  items: readonly T[],
+  heading: string,
+  label: (item: T) => string
+): Promise<T> {
+  process.stdout.write(`\n${heading}\n\n`);
+  items.forEach((item, index) => {
+    process.stdout.write(`  ${index + 1}. ${label(item)}\n`);
+  });
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await rl.question(`\nNumber [1-${items.length}]: `);
+  rl.close();
+  const picked = items[Number(answer.trim()) - 1];
+  if (!picked) fail(`"${answer.trim()}" is not one of the listed options.`, 2);
+  return picked as T;
+}
+
 let projectUuid = args.project;
 if (!projectUuid) {
+  const organisations = await listOrganisations(transport);
+  const named = args.organisation
+    ? organisations.find((org) => org.slug === args.organisation)
+    : undefined;
+
+  if (args.organisation && !named) {
+    fail(
+      organisations.length
+        ? `no organisation with slug "${args.organisation}". Available: ${organisations
+            .map((org) => org.slug)
+            .join(", ")}`
+        : `no organisation with slug "${args.organisation}".`
+    );
+  }
+
+  let organisation: Organisation | undefined = named;
+  if (!organisation && organisations.length === 1) {
+    organisation = organisations[0];
+    process.stdout.write(`\nOrganisation: ${organisation?.name ?? organisation?.slug}\n`);
+  } else if (!organisation && organisations.length > 1) {
+    organisation = await choose(
+      organisations,
+      "Which organisation?",
+      (org) => `${org.name ?? org.slug}${org.personal ? " (personal)" : ""}`
+    );
+  }
+
   let projects;
   try {
-    projects = await listProjects(transport);
+    projects = await listProjects(transport, organisation);
   } catch (error) {
     if (error instanceof GraphqlError) fail(error.message);
     throw error;
   }
 
-  if (projects.length === 0) fail("this account has no projects to connect to.");
+  const where = organisation ? ` in ${organisation.name ?? organisation.slug}` : "";
+  if (projects.length === 0) fail(`this account has no projects to connect to${where}.`);
 
-  if (projects.length === 1) {
-    projectUuid = projects[0]?.uuid;
-    process.stdout.write(`\nProject: ${projects[0]?.name}\n`);
+  const manageable = projects.filter((project) => project.canManageApiKey);
+  if (manageable.length === 0) {
+    fail(
+      `none of the ${projects.length} project(s)${where} allow you to create an API key. ` +
+        "You need project-edit rights on a project whose plan includes API keys — " +
+        "ask an owner or admin, or pick a different organisation."
+    );
+  }
+
+  if (manageable.length === 1) {
+    projectUuid = manageable[0]?.uuid;
+    process.stdout.write(`\nProject: ${manageable[0]?.name}\n`);
   } else {
-    process.stdout.write("\nWhich project?\n\n");
-    projects.forEach((project, index) => {
-      process.stdout.write(`  ${index + 1}. ${project.name}\n`);
-    });
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const answer = await rl.question(`\nNumber [1-${projects.length}]: `);
-    rl.close();
-    const choice = projects[Number(answer.trim()) - 1];
-    if (!choice) fail(`"${answer.trim()}" is not one of the listed projects.`, 2);
+    const choice = await choose(manageable, "Which project?", (project) => project.name);
     projectUuid = choice.uuid;
   }
 }

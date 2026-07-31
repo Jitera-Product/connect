@@ -51,6 +51,7 @@ const PROJECTS_DOCUMENT = `query ConnectProjects($project: ProjectParams) {
     projects {
       uuid
       name
+      canManageApiKey
     }
     errors
   }
@@ -59,33 +60,39 @@ const TEAMS_DOCUMENT = `query ConnectTeams {
   teams {
     slug
     name
+    type
   }
 }`;
-export async function listTeamSlugs(transport) {
+export async function listOrganisations(transport) {
     try {
         const data = await query("ConnectTeams", TEAMS_DOCUMENT, {}, transport);
         return (data.teams ?? [])
-            .map((team) => team.slug)
-            .filter((slug) => Boolean(slug));
+            .filter((team) => Boolean(team.slug))
+            .map((team) => ({ slug: team.slug, name: team.name, personal: team.type === "personal" }));
     }
     catch {
         return [];
     }
 }
+const PROJECT_PAGE_SIZE = 100;
 async function projectsForScope(scope, transport) {
-    const data = await query("ConnectProjects", PROJECTS_DOCUMENT, { project: scope }, transport);
+    const data = await query("ConnectProjects", PROJECTS_DOCUMENT, { project: { ...scope, per: PROJECT_PAGE_SIZE } }, transport);
     const messages = toErrorMessages(data.projects?.errors);
     if (messages.length)
         throw new GraphqlError("ConnectProjects", messages);
     return [...(data.projects?.projects ?? [])];
 }
-export async function listProjects(transport) {
-    const slugs = await listTeamSlugs(transport);
-    const scopes = [
-        {},
-        { onlySharedProjects: true },
-        ...slugs.map((slug) => ({ organisationSlug: slug })),
-    ];
+function scopesFor(organisation) {
+    if (organisation && !organisation.personal) {
+        return [{ organisationSlug: organisation.slug }];
+    }
+    const scopes = [{}, { onlySharedProjects: true }];
+    if (organisation)
+        scopes.push({ organisationSlug: organisation.slug });
+    return scopes;
+}
+export async function listProjects(transport, organisation) {
+    const scopes = scopesFor(organisation);
     const results = await Promise.all(scopes.map((scope, index) => projectsForScope(scope, transport).catch((error) => {
         if (index === 0)
             throw error;

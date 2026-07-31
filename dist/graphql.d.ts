@@ -13,9 +13,15 @@ export declare function query<T>(operation: string, document: string, variables:
 export interface ProjectSummary {
     readonly uuid: string;
     readonly name: string;
+    readonly canManageApiKey: boolean;
 }
-export declare function listTeamSlugs(transport: GraphqlTransport): Promise<string[]>;
-export declare function listProjects(transport: GraphqlTransport): Promise<ProjectSummary[]>;
+export interface Organisation {
+    readonly slug: string;
+    readonly name: string | null;
+    readonly personal: boolean;
+}
+export declare function listOrganisations(transport: GraphqlTransport): Promise<Organisation[]>;
+export declare function listProjects(transport: GraphqlTransport, organisation?: Organisation): Promise<ProjectSummary[]>;
 export type McpAccess = "read" | "read_write";
 export interface CreatedApiKey {
     readonly rawKey: string;

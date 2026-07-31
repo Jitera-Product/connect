@@ -76,6 +76,13 @@ export async function query<T>(
 export interface ProjectSummary {
   readonly uuid: string;
   readonly name: string;
+  readonly canManageApiKey: boolean;
+}
+
+export interface Organisation {
+  readonly slug: string;
+  readonly name: string | null;
+  readonly personal: boolean;
 }
 
 const PROJECTS_DOCUMENT = `query ConnectProjects($project: ProjectParams) {
@@ -83,6 +90,7 @@ const PROJECTS_DOCUMENT = `query ConnectProjects($project: ProjectParams) {
     projects {
       uuid
       name
+      canManageApiKey
     }
     errors
   }
@@ -92,19 +100,28 @@ const TEAMS_DOCUMENT = `query ConnectTeams {
   teams {
     slug
     name
+    type
   }
 }`;
 
 interface TeamsPayload {
-  readonly teams: readonly { readonly slug: string | null; readonly name: string | null }[] | null;
+  readonly teams:
+    | readonly {
+        readonly slug: string | null;
+        readonly name: string | null;
+        readonly type: string | null;
+      }[]
+    | null;
 }
 
-export async function listTeamSlugs(transport: GraphqlTransport): Promise<string[]> {
+export async function listOrganisations(transport: GraphqlTransport): Promise<Organisation[]> {
   try {
     const data = await query<TeamsPayload>("ConnectTeams", TEAMS_DOCUMENT, {}, transport);
     return (data.teams ?? [])
-      .map((team) => team.slug)
-      .filter((slug): slug is string => Boolean(slug));
+      .filter((team): team is { slug: string; name: string | null; type: string | null } =>
+        Boolean(team.slug)
+      )
+      .map((team) => ({ slug: team.slug, name: team.name, personal: team.type === "personal" }));
   } catch {
     return [];
   }
@@ -113,9 +130,11 @@ export async function listTeamSlugs(transport: GraphqlTransport): Promise<string
 interface ProjectsPayload {
   readonly projects: {
     readonly projects: readonly ProjectSummary[] | null;
-    readonly errors: readonly string[] | null;
+    readonly errors: MutationErrors;
   } | null;
 }
+
+const PROJECT_PAGE_SIZE = 100;
 
 async function projectsForScope(
   scope: Record<string, unknown>,
@@ -124,7 +143,7 @@ async function projectsForScope(
   const data = await query<ProjectsPayload>(
     "ConnectProjects",
     PROJECTS_DOCUMENT,
-    { project: scope },
+    { project: { ...scope, per: PROJECT_PAGE_SIZE } },
     transport
   );
 
@@ -134,14 +153,20 @@ async function projectsForScope(
   return [...(data.projects?.projects ?? [])];
 }
 
-export async function listProjects(transport: GraphqlTransport): Promise<ProjectSummary[]> {
-  const slugs = await listTeamSlugs(transport);
+function scopesFor(organisation?: Organisation): Record<string, unknown>[] {
+  if (organisation && !organisation.personal) {
+    return [{ organisationSlug: organisation.slug }];
+  }
+  const scopes: Record<string, unknown>[] = [{}, { onlySharedProjects: true }];
+  if (organisation) scopes.push({ organisationSlug: organisation.slug });
+  return scopes;
+}
 
-  const scopes: Record<string, unknown>[] = [
-    {},
-    { onlySharedProjects: true },
-    ...slugs.map((slug) => ({ organisationSlug: slug })),
-  ];
+export async function listProjects(
+  transport: GraphqlTransport,
+  organisation?: Organisation
+): Promise<ProjectSummary[]> {
+  const scopes = scopesFor(organisation);
 
   const results = await Promise.all(
     scopes.map((scope, index) =>

@@ -2,7 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type ServerResponse } from "node:http";
 
-import { GraphqlError, createApiKey, listProjects } from "../src/graphql.ts";
+import {
+  GraphqlError,
+  createApiKey,
+  listOrganisations,
+  listProjects,
+} from "../src/graphql.ts";
 
 function serve(respond: (operation: string, res: ServerResponse) => void): Promise<{
   url: string;
@@ -89,7 +94,11 @@ test("createApiKey reads rawKey from the payload the schema defines", async () =
 
 function recordingServer(
   respond: (operation: string, variables: Record<string, unknown>, res: ServerResponse) => void
-): Promise<{ url: string; requests: { operation: string; variables: Record<string, unknown> }[]; close: () => Promise<void> }> {
+): Promise<{
+  url: string;
+  requests: { operation: string; variables: Record<string, unknown> }[];
+  close: () => Promise<void>;
+}> {
   const requests: { operation: string; variables: Record<string, unknown> }[] = [];
   const server = createServer((req, res) => {
     let raw = "";
@@ -117,17 +126,23 @@ function recordingServer(
   });
 }
 
+function scopeOf(entry: { variables: Record<string, unknown> }): Record<string, unknown> {
+  return (entry.variables["project"] ?? {}) as Record<string, unknown>;
+}
+
+const PERSONAL = { slug: "mine", name: "My Team", personal: true };
+const TEAM = { slug: "acme", name: "Acme", personal: false };
+
 test("every projects request carries a project argument", async () => {
-  const server = await recordingServer((operation, _vars, res) => {
-    if (operation === "ConnectTeams") return json(res, { data: { teams: [{ slug: "acme", name: "Acme" }] } });
-    return json(res, { data: { projects: { projects: [], errors: null } } });
-  });
+  const server = await recordingServer((_operation, _vars, res) =>
+    json(res, { data: { projects: { projects: [], errors: null } } })
+  );
 
   await listProjects({ automationUrl: server.url, accessToken: "t" });
-  const projectCalls = server.requests.filter((r) => r.operation === "ConnectProjects");
+  const calls = server.requests.filter((r) => r.operation === "ConnectProjects");
 
-  assert.ok(projectCalls.length >= 2);
-  for (const call of projectCalls) {
+  assert.ok(calls.length >= 1);
+  for (const call of calls) {
     assert.ok(
       Object.prototype.hasOwnProperty.call(call.variables, "project"),
       "omitting project makes the resolver raise ArgumentError server-side"
@@ -137,45 +152,141 @@ test("every projects request carries a project argument", async () => {
   await server.close();
 });
 
-test("projects from personal and team scopes are merged and deduped", async () => {
-  const server = await recordingServer((operation, vars, res) => {
-    if (operation === "ConnectTeams") return json(res, { data: { teams: [{ slug: "acme", name: "Acme" }] } });
+test("a bounded page size is requested so the default 25 cap is not hit silently", async () => {
+  const server = await recordingServer((_operation, _vars, res) =>
+    json(res, { data: { projects: { projects: [], errors: null } } })
+  );
+
+  await listProjects({ automationUrl: server.url, accessToken: "t" });
+  for (const call of server.requests.filter((r) => r.operation === "ConnectProjects")) {
+    assert.equal(scopeOf(call)["per"], 100);
+  }
+  await server.close();
+});
+
+test("a team organisation is queried by its own slug only", async () => {
+  const server = await recordingServer((_operation, _vars, res) =>
+    json(res, { data: { projects: { projects: [], errors: null } } })
+  );
+
+  await listProjects({ automationUrl: server.url, accessToken: "t" }, TEAM);
+  const scopes = server.requests
+    .filter((r) => r.operation === "ConnectProjects")
+    .map((r) => scopeOf(r));
+
+  assert.equal(scopes.length, 1);
+  assert.equal(scopes[0]?.["organisationSlug"], "acme");
+  await server.close();
+});
+
+test("a personal organisation also picks up owned and shared projects", async () => {
+  const server = await recordingServer((_operation, _vars, res) =>
+    json(res, { data: { projects: { projects: [], errors: null } } })
+  );
+
+  await listProjects({ automationUrl: server.url, accessToken: "t" }, PERSONAL);
+  const scopes = server.requests
+    .filter((r) => r.operation === "ConnectProjects")
+    .map((r) => scopeOf(r));
+
+  assert.ok(scopes.some((s) => s["onlySharedProjects"] === true));
+  assert.ok(scopes.some((s) => s["organisationSlug"] === "mine"));
+  assert.ok(scopes.some((s) => !s["onlySharedProjects"] && !s["organisationSlug"]));
+  await server.close();
+});
+
+test("projects from every scope are merged and deduped by uuid", async () => {
+  const server = await recordingServer((_operation, vars, res) => {
     const scope = (vars["project"] ?? {}) as Record<string, unknown>;
-    if (scope["organisationSlug"] === "acme") {
+    if (scope["organisationSlug"] === "mine") {
       return json(res, {
-        data: { projects: { projects: [{ uuid: "u1", name: "Shared" }, { uuid: "u2", name: "Team" }], errors: null } },
+        data: {
+          projects: {
+            projects: [
+              { uuid: "u1", name: "Shared", canManageApiKey: true },
+              { uuid: "u2", name: "Team", canManageApiKey: true },
+            ],
+            errors: null,
+          },
+        },
       });
     }
-    return json(res, { data: { projects: { projects: [{ uuid: "u1", name: "Shared" }], errors: null } } });
+    return json(res, {
+      data: { projects: { projects: [{ uuid: "u1", name: "Shared", canManageApiKey: true }], errors: null } },
+    });
   });
 
-  const projects = await listProjects({ automationUrl: server.url, accessToken: "t" });
+  const projects = await listProjects({ automationUrl: server.url, accessToken: "t" }, PERSONAL);
   assert.deepEqual(projects.map((p) => p.uuid).sort(), ["u1", "u2"]);
   await server.close();
 });
 
-test("one failing team scope does not lose the personal projects", async () => {
-  const server = await recordingServer((operation, vars, res) => {
-    if (operation === "ConnectTeams") return json(res, { data: { teams: [{ slug: "gone", name: "Gone" }] } });
+test("canManageApiKey is carried through so the caller can filter on it", async () => {
+  const server = await recordingServer((_operation, _vars, res) =>
+    json(res, {
+      data: {
+        projects: {
+          projects: [
+            { uuid: "u1", name: "Allowed", canManageApiKey: true },
+            { uuid: "u2", name: "Denied", canManageApiKey: false },
+          ],
+          errors: null,
+        },
+      },
+    })
+  );
+
+  const projects = await listProjects({ automationUrl: server.url, accessToken: "t" });
+  assert.deepEqual(
+    projects.filter((p) => p.canManageApiKey).map((p) => p.uuid),
+    ["u1"]
+  );
+  await server.close();
+});
+
+test("one failing secondary scope does not lose the personal projects", async () => {
+  const server = await recordingServer((_operation, vars, res) => {
     const scope = (vars["project"] ?? {}) as Record<string, unknown>;
-    if (scope["organisationSlug"] === "gone") {
-      return json(res, { data: { projects: null }, errors: [{ message: "Couldn't find Organisation" }] });
+    if (scope["onlySharedProjects"] === true) {
+      return json(res, { data: { projects: null }, errors: [{ message: "boom" }] });
     }
-    return json(res, { data: { projects: { projects: [{ uuid: "u1", name: "Mine" }], errors: null } } });
+    return json(res, {
+      data: { projects: { projects: [{ uuid: "u1", name: "Mine", canManageApiKey: true }], errors: null } },
+    });
   });
 
   const projects = await listProjects({ automationUrl: server.url, accessToken: "t" });
-  assert.deepEqual(projects, [{ uuid: "u1", name: "Mine" }]);
+  assert.deepEqual(projects.map((p) => p.uuid), ["u1"]);
   await server.close();
 });
 
-test("a teams query failure still leaves the personal scope working", async () => {
-  const server = await recordingServer((operation, _vars, res) => {
-    if (operation === "ConnectTeams") return json(res, { errors: [{ message: "nope" }] });
-    return json(res, { data: { projects: { projects: [{ uuid: "u1", name: "Mine" }], errors: null } } });
-  });
+test("organisations report whether they are the personal team", async () => {
+  const server = await recordingServer((_operation, _vars, res) =>
+    json(res, {
+      data: {
+        teams: [
+          { slug: "mine", name: "My Team", type: "personal" },
+          { slug: "acme", name: "Acme", type: "company" },
+          { slug: null, name: "Broken", type: "company" },
+        ],
+      },
+    })
+  );
 
-  const projects = await listProjects({ automationUrl: server.url, accessToken: "t" });
-  assert.deepEqual(projects, [{ uuid: "u1", name: "Mine" }]);
+  const organisations = await listOrganisations({ automationUrl: server.url, accessToken: "t" });
+  assert.deepEqual(organisations, [
+    { slug: "mine", name: "My Team", personal: true },
+    { slug: "acme", name: "Acme", personal: false },
+  ]);
   await server.close();
 });
+
+test("a failing teams query degrades to no organisations rather than throwing", async () => {
+  const server = await recordingServer((_operation, _vars, res) =>
+    json(res, { errors: [{ message: "nope" }] })
+  );
+
+  assert.deepEqual(await listOrganisations({ automationUrl: server.url, accessToken: "t" }), []);
+  await server.close();
+});
+

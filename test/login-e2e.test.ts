@@ -33,14 +33,16 @@ interface Replay {
 
 interface ReplayOptions {
   readonly pendingPolls?: number;
-  readonly projects?: { uuid: string; name: string }[];
+  readonly projects?: { uuid: string; name: string; canManageApiKey?: boolean }[];
+  readonly teams?: { slug: string; name: string; type: string }[];
   readonly createKeyResponse?: unknown;
 }
 
 function replayServer(options: ReplayOptions = {}): Promise<Replay> {
   const {
     pendingPolls = 1,
-    projects = [{ uuid: "proj-uuid-1", name: "Acme Platform" }],
+    projects = [{ uuid: "proj-uuid-1", name: "Acme Platform", canManageApiKey: true }],
+    teams = [],
     createKeyResponse = {
       data: {
         createApiKey: { rawKey: "sk-jitera-abc123", errors: null, apiKey: { maskedKey: "sk-…123" } },
@@ -77,6 +79,7 @@ function replayServer(options: ReplayOptions = {}): Promise<Replay> {
 
       if (req.url === "/graphql") {
         const body = JSON.parse(raw) as { operationName?: string; variables?: unknown };
+        if (body.operationName === "ConnectTeams") return json(200, { data: { teams } });
         if (body.operationName === "ConnectProjects")
           return json(200, { data: { projects: { projects, errors: null } } });
         if (body.operationName === "ConnectCreateApiKey") {
@@ -219,5 +222,63 @@ test("a mutation that returns no key does not print an empty export line", async
   assert.equal(code, 1);
   assert.ok(!stdout.includes("export JITERA_API_KEY="));
   assert.match(stderr, /no key was returned/);
+  await server.close();
+});
+
+test("projects you cannot create a key on are excluded, with a reason", async () => {
+  const server = await replayServer({
+    projects: [{ uuid: "proj-uuid-1", name: "Acme Platform", canManageApiKey: false }],
+  });
+  const { stderr, code } = await runNode(LOGIN, { env: { JITERA_AUTOMATION_URL: server.url } });
+
+  assert.equal(code, 1);
+  assert.match(stderr, /allow you to create an API key/);
+  assert.ok(!stderr.includes("no projects to connect to"), "the account does have projects");
+  await server.close();
+});
+
+test("a single organisation is selected without prompting", async () => {
+  const server = await replayServer({
+    teams: [{ slug: "acme", name: "Acme", type: "company" }],
+  });
+  const { stdout, code } = await runNode(LOGIN, {
+    args: ["--json"],
+    env: { JITERA_AUTOMATION_URL: server.url },
+  });
+
+  assert.equal(code, 0, `login exited ${code}: ${stdout}`);
+  assert.match(stdout, /Organisation: Acme/);
+  await server.close();
+});
+
+test("--org picks the organisation so nothing is prompted", async () => {
+  const server = await replayServer({
+    teams: [
+      { slug: "acme", name: "Acme", type: "company" },
+      { slug: "mine", name: "My Team", type: "personal" },
+    ],
+  });
+  const { stdout, code } = await runNode(LOGIN, {
+    args: ["--json", "--org=acme"],
+    env: { JITERA_AUTOMATION_URL: server.url },
+  });
+
+  assert.equal(code, 0, `login exited ${code}: ${stdout}`);
+  assert.match(stdout, /proj-uuid-1/);
+  await server.close();
+});
+
+test("an unknown --org fails and lists the ones that exist", async () => {
+  const server = await replayServer({
+    teams: [{ slug: "acme", name: "Acme", type: "company" }],
+  });
+  const { stderr, code } = await runNode(LOGIN, {
+    args: ["--org=nope"],
+    env: { JITERA_AUTOMATION_URL: server.url },
+  });
+
+  assert.equal(code, 1);
+  assert.match(stderr, /no organisation with slug "nope"/);
+  assert.match(stderr, /acme/);
   await server.close();
 });
