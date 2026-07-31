@@ -46,8 +46,8 @@ export async function query(operation, document, variables, { automationUrl, acc
     }
     return payload.data;
 }
-const PROJECTS_DOCUMENT = `query ConnectProjects {
-  projects {
+const PROJECTS_DOCUMENT = `query ConnectProjects($project: ProjectParams) {
+  projects(project: $project) {
     projects {
       uuid
       name
@@ -55,12 +55,48 @@ const PROJECTS_DOCUMENT = `query ConnectProjects {
     errors
   }
 }`;
-export async function listProjects(transport) {
-    const data = await query("ConnectProjects", PROJECTS_DOCUMENT, {}, transport);
+const TEAMS_DOCUMENT = `query ConnectTeams {
+  teams {
+    slug
+    name
+  }
+}`;
+export async function listTeamSlugs(transport) {
+    try {
+        const data = await query("ConnectTeams", TEAMS_DOCUMENT, {}, transport);
+        return (data.teams ?? [])
+            .map((team) => team.slug)
+            .filter((slug) => Boolean(slug));
+    }
+    catch {
+        return [];
+    }
+}
+async function projectsForScope(scope, transport) {
+    const data = await query("ConnectProjects", PROJECTS_DOCUMENT, { project: scope }, transport);
     const messages = toErrorMessages(data.projects?.errors);
     if (messages.length)
         throw new GraphqlError("ConnectProjects", messages);
     return [...(data.projects?.projects ?? [])];
+}
+export async function listProjects(transport) {
+    const slugs = await listTeamSlugs(transport);
+    const scopes = [
+        {},
+        { onlySharedProjects: true },
+        ...slugs.map((slug) => ({ organisationSlug: slug })),
+    ];
+    const results = await Promise.all(scopes.map((scope, index) => projectsForScope(scope, transport).catch((error) => {
+        if (index === 0)
+            throw error;
+        return [];
+    })));
+    const seen = new Map();
+    for (const project of results.flat()) {
+        if (project.uuid && !seen.has(project.uuid))
+            seen.set(project.uuid, project);
+    }
+    return [...seen.values()];
 }
 const CREATE_KEY_DOCUMENT = `mutation ConnectCreateApiKey($params: CreateApiKeyInput!) {
   createApiKey(params: $params) {

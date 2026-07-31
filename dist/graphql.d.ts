@@ -14,6 +14,7 @@ export interface ProjectSummary {
     readonly uuid: string;
     readonly name: string;
 }
+export declare function listTeamSlugs(transport: GraphqlTransport): Promise<string[]>;
 export declare function listProjects(transport: GraphqlTransport): Promise<ProjectSummary[]>;
 export type McpAccess = "read" | "read_write";
 export interface CreatedApiKey {

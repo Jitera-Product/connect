@@ -78,8 +78,8 @@ export interface ProjectSummary {
   readonly name: string;
 }
 
-const PROJECTS_DOCUMENT = `query ConnectProjects {
-  projects {
+const PROJECTS_DOCUMENT = `query ConnectProjects($project: ProjectParams) {
+  projects(project: $project) {
     projects {
       uuid
       name
@@ -88,6 +88,28 @@ const PROJECTS_DOCUMENT = `query ConnectProjects {
   }
 }`;
 
+const TEAMS_DOCUMENT = `query ConnectTeams {
+  teams {
+    slug
+    name
+  }
+}`;
+
+interface TeamsPayload {
+  readonly teams: readonly { readonly slug: string | null; readonly name: string | null }[] | null;
+}
+
+export async function listTeamSlugs(transport: GraphqlTransport): Promise<string[]> {
+  try {
+    const data = await query<TeamsPayload>("ConnectTeams", TEAMS_DOCUMENT, {}, transport);
+    return (data.teams ?? [])
+      .map((team) => team.slug)
+      .filter((slug): slug is string => Boolean(slug));
+  } catch {
+    return [];
+  }
+}
+
 interface ProjectsPayload {
   readonly projects: {
     readonly projects: readonly ProjectSummary[] | null;
@@ -95,13 +117,46 @@ interface ProjectsPayload {
   } | null;
 }
 
-export async function listProjects(transport: GraphqlTransport): Promise<ProjectSummary[]> {
-  const data = await query<ProjectsPayload>("ConnectProjects", PROJECTS_DOCUMENT, {}, transport);
+async function projectsForScope(
+  scope: Record<string, unknown>,
+  transport: GraphqlTransport
+): Promise<ProjectSummary[]> {
+  const data = await query<ProjectsPayload>(
+    "ConnectProjects",
+    PROJECTS_DOCUMENT,
+    { project: scope },
+    transport
+  );
 
   const messages = toErrorMessages(data.projects?.errors);
   if (messages.length) throw new GraphqlError("ConnectProjects", messages);
 
   return [...(data.projects?.projects ?? [])];
+}
+
+export async function listProjects(transport: GraphqlTransport): Promise<ProjectSummary[]> {
+  const slugs = await listTeamSlugs(transport);
+
+  const scopes: Record<string, unknown>[] = [
+    {},
+    { onlySharedProjects: true },
+    ...slugs.map((slug) => ({ organisationSlug: slug })),
+  ];
+
+  const results = await Promise.all(
+    scopes.map((scope, index) =>
+      projectsForScope(scope, transport).catch((error: unknown) => {
+        if (index === 0) throw error;
+        return [] as ProjectSummary[];
+      })
+    )
+  );
+
+  const seen = new Map<string, ProjectSummary>();
+  for (const project of results.flat()) {
+    if (project.uuid && !seen.has(project.uuid)) seen.set(project.uuid, project);
+  }
+  return [...seen.values()];
 }
 
 export type McpAccess = "read" | "read_write";
