@@ -1,6 +1,6 @@
 {
   "name": "@jitera/connect",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "type": "module",
   "description": "Connect AI coding assistants to Jitera projects: documentation, source, and shared project memory",
   "license": "Apache-2.0",
@@ -20,8 +20,8 @@
     "node": ">=20"
   },
   "bin": {
-    "jitera-connect": "./dist/bin/cli.js",
-    "jitera-connect-login": "./dist/bin/login.js"
+    "connect": "./dist/bin/connect.js",
+    "jitera-connect": "./dist/bin/connect.js"
   },
   "files": [
     "dist/",
