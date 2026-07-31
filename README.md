@@ -1,5 +1,20 @@
 # how to install
 
+## one command
+
+```
+npx @jitera/connect login --install
+```
+
+Signs you in through your browser, creates an api key, and configures every
+assistant it finds. Detected independently: claude code, cursor, codex.
+
+For a pilot or staging environment:
+
+```
+npx @jitera/connect login --env=studio-05 --install
+```
+
 ## claude code
 
 ```
@@ -24,7 +39,7 @@ npx @jitera/connect
 claude code, at install:
 
 ```
-/plugin install jitera-connect --config environment=studio-04
+/plugin install jitera-connect --config environment=studio-05
 ```
 
 claude code, after installing:
@@ -33,9 +48,18 @@ claude code, after installing:
 /plugin configure jitera-connect
 ```
 
-cursor:
+cursor and codex:
 
 ```
-npx @jitera/connect --env=studio-04
+npx @jitera/connect --env=studio-05
 npx @jitera/connect --env=studio-stage
+```
+
+## the api key
+
+`login --install` puts the key in your os keychain for claude code. cursor and
+codex read it from the environment, so export it:
+
+```
+export JITERA_API_KEY=<the key login printed>
 ```
