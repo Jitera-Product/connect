@@ -77,7 +77,8 @@ function replayServer(options: ReplayOptions = {}): Promise<Replay> {
 
       if (req.url === "/graphql") {
         const body = JSON.parse(raw) as { operationName?: string; variables?: unknown };
-        if (body.operationName === "ConnectProjects") return json(200, { data: { projects } });
+        if (body.operationName === "ConnectProjects")
+          return json(200, { data: { projects: { projects, errors: null } } });
         if (body.operationName === "ConnectCreateApiKey") {
           seen.push(`createApiKey ${JSON.stringify(body.variables)}`);
           return json(200, createKeyResponse);

@@ -80,19 +80,28 @@ export interface ProjectSummary {
 
 const PROJECTS_DOCUMENT = `query ConnectProjects {
   projects {
-    uuid
-    name
+    projects {
+      uuid
+      name
+    }
+    errors
   }
 }`;
 
+interface ProjectsPayload {
+  readonly projects: {
+    readonly projects: readonly ProjectSummary[] | null;
+    readonly errors: readonly string[] | null;
+  } | null;
+}
+
 export async function listProjects(transport: GraphqlTransport): Promise<ProjectSummary[]> {
-  const data = await query<{ projects: ProjectSummary[] }>(
-    "ConnectProjects",
-    PROJECTS_DOCUMENT,
-    {},
-    transport
-  );
-  return data.projects ?? [];
+  const data = await query<ProjectsPayload>("ConnectProjects", PROJECTS_DOCUMENT, {}, transport);
+
+  const messages = toErrorMessages(data.projects?.errors);
+  if (messages.length) throw new GraphqlError("ConnectProjects", messages);
+
+  return [...(data.projects?.projects ?? [])];
 }
 
 export type McpAccess = "read" | "read_write";

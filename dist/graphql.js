@@ -48,13 +48,19 @@ export async function query(operation, document, variables, { automationUrl, acc
 }
 const PROJECTS_DOCUMENT = `query ConnectProjects {
   projects {
-    uuid
-    name
+    projects {
+      uuid
+      name
+    }
+    errors
   }
 }`;
 export async function listProjects(transport) {
     const data = await query("ConnectProjects", PROJECTS_DOCUMENT, {}, transport);
-    return data.projects ?? [];
+    const messages = toErrorMessages(data.projects?.errors);
+    if (messages.length)
+        throw new GraphqlError("ConnectProjects", messages);
+    return [...(data.projects?.projects ?? [])];
 }
 const CREATE_KEY_DOCUMENT = `mutation ConnectCreateApiKey($params: CreateApiKeyInput!) {
   createApiKey(params: $params) {
