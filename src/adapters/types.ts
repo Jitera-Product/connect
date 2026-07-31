@@ -7,6 +7,7 @@ export interface AdapterContext {
   readonly home: string;
   readonly cwd: string;
   readonly mcpUrl?: string;
+  readonly apiKey?: string;
   readonly dryRun?: boolean;
 }
 

@@ -40,7 +40,9 @@ export const codex: Adapter = {
     const before = read(path);
     const body = [
       `url = "${context.mcpUrl ?? ""}"`,
-      `bearer_token_env_var = "${API_KEY_ENV}"`,
+      context.apiKey
+        ? `bearer_token = "${context.apiKey}"`
+        : `bearer_token_env_var = "${API_KEY_ENV}"`,
     ].join("\n");
     const after = ensureRootKey(upsertTable(before, SERVER_TABLE, body), RMCP_FLAG, "true");
     if (!context.dryRun) write(path, after);

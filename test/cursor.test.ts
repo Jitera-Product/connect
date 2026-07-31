@@ -34,6 +34,21 @@ test("install writes an http server entry with an env reference, not the key", (
   assert.ok(!JSON.stringify(written).includes("sk-"), "no secret may be written to disk");
 });
 
+test("a supplied key is written inline so nothing needs exporting", () => {
+  const { home, cwd } = sandbox();
+  const { path } = cursor.install({ scope: "user", home, cwd, mcpUrl: MCP_URL, apiKey: "sk-live" });
+  const server = JSON.parse(readFileSync(path, "utf8")).mcpServers.jitera;
+  assert.equal(server.headers.Authorization, "Bearer sk-live");
+  assert.ok(!server.headers.Authorization.includes("${env:"));
+});
+
+test("without a key the config falls back to an env reference", () => {
+  const { home, cwd } = sandbox();
+  const { path } = cursor.install({ scope: "project", home, cwd, mcpUrl: MCP_URL });
+  const server = JSON.parse(readFileSync(path, "utf8")).mcpServers.jitera;
+  assert.equal(server.headers.Authorization, "Bearer ${env:JITERA_API_KEY}");
+});
+
 test("install is idempotent", () => {
   const { home, cwd } = sandbox();
   const first = cursor.install({ scope: "project", home, cwd, mcpUrl: MCP_URL });

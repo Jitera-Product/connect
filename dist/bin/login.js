@@ -155,7 +155,13 @@ if (args.install) {
     process.stdout.write(claude.installed
         ? "\nClaude Code: installed and configured, key stored in your keychain.\n"
         : `\nClaude Code: skipped (${claude.reason}).\n`);
-    const context = { scope: "project", home: homedir(), cwd: process.cwd(), mcpUrl };
+    const context = {
+        scope: "user",
+        home: homedir(),
+        cwd: process.cwd(),
+        mcpUrl,
+        apiKey: created.rawKey,
+    };
     const local = [cursor, codex].filter((adapter) => adapter.detect(context));
     if (local.length) {
         for (const adapter of local) {
@@ -166,8 +172,6 @@ if (args.install) {
         installSkills({ packageRoot, targetDirs, values });
         writeAgentsMd({ packageRoot, projectRoot: context.cwd, values });
         process.stdout.write("Skills and AGENTS.md written.\n");
-        process.stdout.write(`\nFor Cursor and Codex, export the key so they can read it:\n`);
-        process.stdout.write(`  export JITERA_API_KEY=${created.rawKey}\n`);
     }
 }
 if (args.json) {

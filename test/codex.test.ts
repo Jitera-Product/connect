@@ -45,6 +45,20 @@ test("the api key itself is never written to the config", () => {
   assert.ok(!written.includes("sk-"), "only the env var name may appear, never a key");
 });
 
+test("a supplied key is written inline so nothing needs exporting", () => {
+  const { home, cwd, path } = sandbox();
+  codex.install({ scope: "user", home, cwd, mcpUrl: MCP_URL, apiKey: "sk-live" });
+  const written = readFileSync(path, "utf8");
+  assert.match(written, /bearer_token = "sk-live"/);
+  assert.ok(!written.includes("bearer_token_env_var"));
+});
+
+test("without a key the config falls back to an env var reference", () => {
+  const { home, cwd, path } = sandbox();
+  codex.install({ scope: "user", home, cwd, mcpUrl: MCP_URL });
+  assert.match(readFileSync(path, "utf8"), /bearer_token_env_var = "JITERA_API_KEY"/);
+});
+
 test("install is idempotent", () => {
   const { home, cwd, path } = sandbox();
   const context = { scope: "user" as const, home, cwd, mcpUrl: MCP_URL };

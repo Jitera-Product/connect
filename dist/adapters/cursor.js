@@ -4,11 +4,13 @@ import { mergeServer, readConfig, removeServer, writeConfig, } from "../mcp-conf
 export const SERVER_NAME = "jitera";
 const CONFIG_KEY = "mcpServers";
 const API_KEY_ENV = "JITERA_API_KEY";
-function serverEntry(mcpUrl) {
+function serverEntry(mcpUrl, apiKey) {
     return {
         type: "http",
         url: mcpUrl,
-        headers: { Authorization: `Bearer \${env:${API_KEY_ENV}}` },
+        headers: {
+            Authorization: apiKey ? `Bearer ${apiKey}` : `Bearer \${env:${API_KEY_ENV}}`,
+        },
     };
 }
 export const cursor = {
@@ -30,7 +32,7 @@ export const cursor = {
     install(context) {
         const path = this.mcpConfigPath(context);
         const before = readConfig(path);
-        const after = mergeServer(before, CONFIG_KEY, SERVER_NAME, serverEntry(context.mcpUrl ?? ""));
+        const after = mergeServer(before, CONFIG_KEY, SERVER_NAME, serverEntry(context.mcpUrl ?? "", context.apiKey));
         if (!context.dryRun)
             writeConfig(path, after);
         return { path, config: after, changed: JSON.stringify(before) !== JSON.stringify(after) };

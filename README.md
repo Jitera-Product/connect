@@ -57,9 +57,14 @@ npx @jitera/connect --env=studio-stage
 
 ## the api key
 
-`login --install` puts the key in your os keychain for claude code. cursor and
-codex read it from the environment, so export it:
+`login --install` stores the key for you. nothing to export.
+
+- claude code: your os keychain
+- cursor and codex: their own config in your home directory, outside any repo
+
+installing without `login` leaves cursor and codex reading `JITERA_API_KEY` from
+the environment instead:
 
 ```
-export JITERA_API_KEY=<the key login printed>
+export JITERA_API_KEY=<your api key>
 ```
