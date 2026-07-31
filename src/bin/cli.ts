@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { homedir } from "node:os";
+import { createTheme, heading } from "../theme.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -144,10 +145,15 @@ for (const adapter of detected) {
   }
 }
 
+const theme = createTheme({ env: process.env, isTty: Boolean(process.stdout.isTTY) });
+process.stdout.write(heading(theme, brand, args.uninstall ? "disconnect" : "connect"));
+
 const verb = args.uninstall ? "removed from" : "written to";
 for (const { adapter, result } of results) {
   process.stdout.write(
-    `${adapter.label}: ${result.changed ? verb : "already up to date in"} ${result.path}\n`
+    `  ${result.changed ? theme.ok("✓") : theme.dim("–")} ${theme.bold(adapter.label)} ${theme.dim(
+      `${result.changed ? verb : "already up to date in"} ${result.path}`
+    )}\n`
   );
 }
 
@@ -162,8 +168,8 @@ if (!args.skipSkills) {
   const skillVerb = args.uninstall ? "removed from" : "written to";
   process.stdout.write(
     skills.changed
-      ? `Skills: ${skills.skills.length} ${skillVerb} ${targetDirs.join(", ")}\n`
-      : `Skills: already up to date in ${targetDirs.join(", ")}\n`
+      ? `  ${theme.ok("✓")} ${theme.bold("Skills")} ${theme.dim(`${skills.skills.length} ${skillVerb} ${targetDirs.join(", ")}`)}\n`
+      : `  ${theme.dim("–")} ${theme.bold("Skills")} ${theme.dim(`already up to date in ${targetDirs.join(", ")}`)}\n`
   );
 
   if (!args.uninstall) {
@@ -175,15 +181,17 @@ if (!args.skipSkills) {
     });
     process.stdout.write(
       agents.changed
-        ? `Instructions: ${agents.agents.action} block in ${agents.agentsPath}\n`
-        : `Instructions: already up to date in ${agents.agentsPath}\n`
+        ? `  ${theme.ok("✓")} ${theme.bold("Instructions")} ${theme.dim(`${agents.agents.action} block in ${agents.agentsPath}`)}\n`
+        : `  ${theme.dim("–")} ${theme.bold("Instructions")} ${theme.dim(`already up to date in ${agents.agentsPath}`)}\n`
     );
   }
 }
 
 if (args.dryRun) {
-  process.stdout.write("\ndry run, nothing was written\n");
+  process.stdout.write(`\n  ${theme.dim("dry run, nothing was written")}\n`);
 } else if (!args.uninstall) {
-  process.stdout.write(`\nendpoint ${mcpUrl}\n`);
-  process.stdout.write("export JITERA_API_KEY=<your api key> before starting your assistant\n");
+  process.stdout.write(`\n  ${theme.dim("endpoint")}  ${theme.accent(mcpUrl)}\n`);
+  process.stdout.write(
+    `  ${theme.dim("export JITERA_API_KEY=<your api key> before starting your assistant")}\n`
+  );
 }

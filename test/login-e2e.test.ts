@@ -247,7 +247,7 @@ test("a single organisation is selected without prompting", async () => {
   });
 
   assert.equal(code, 0, `login exited ${code}: ${stdout}`);
-  assert.match(stdout, /Organisation: Acme/);
+  assert.match(stdout, /Organisation {2}Acme/);
   await server.close();
 });
 
@@ -280,5 +280,18 @@ test("an unknown --org fails and lists the ones that exist", async () => {
   assert.equal(code, 1);
   assert.match(stderr, /no organisation with slug "nope"/);
   assert.match(stderr, /acme/);
+  await server.close();
+});
+
+test("piped output never fills up with spinner frames", async () => {
+  const server = await replayServer();
+  const { stdout } = await runNode(LOGIN, {
+    args: ["--project=proj-uuid-1"],
+    env: { JITERA_AUTOMATION_URL: server.url, FORCE_COLOR: "1", COLORTERM: "truecolor" },
+  });
+
+  assert.ok(!/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(stdout), "a redirected stream must not animate");
+  assert.ok(!stdout.includes("\r"), "no carriage returns when not a terminal");
+  assert.match(stdout, /Waiting for approval/);
   await server.close();
 });

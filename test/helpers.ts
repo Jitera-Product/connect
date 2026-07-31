@@ -22,6 +22,7 @@ export function runNode(
     const child = spawn(process.execPath, [join(ROOT, scriptRelPath), ...args], {
       env: {
         ...process.env,
+        FORCE_COLOR: "0",
         ...(isolatedTmp ? { TMPDIR: mkdtempSync(join(tmpdir(), "jc-test-")) } : {}),
         ...env,
       },

@@ -4,6 +4,7 @@ import { DiscoveryError, discoverDeployment } from "../discovery.js";
 import { UnknownEnvironmentError } from "../environments.js";
 import { DeviceFlowError, pollForAccessToken, requestDeviceAuthorization, } from "../device-flow.js";
 import { GraphqlError, createApiKey, listOrganisations, listProjects, } from "../graphql.js";
+import { createTheme, heading, startSpinner } from "../theme.js";
 import { installClaudeCodePlugin } from "../install/claude-code.js";
 import { writeAgentsMd } from "../install/agents-md.js";
 import { installSkills } from "../install/skills.js";
@@ -49,8 +50,9 @@ function parseArgs(argv) {
     }
     return args;
 }
+const theme = createTheme({ env: process.env, isTty: Boolean(process.stdout.isTTY) });
 function fail(message, code = 1) {
-    process.stderr.write(`error: ${message}\n`);
+    process.stderr.write(`\n  ${theme.err("error")}  ${message}\n`);
     process.exit(code);
 }
 const args = parseArgs(process.argv.slice(2));
@@ -96,27 +98,35 @@ catch (error) {
     throw error;
 }
 const openUrl = authorization.verificationUriComplete ?? authorization.verificationUri;
-process.stdout.write(`\nSign in to ${brand} to authorise this device.\n\n`);
-process.stdout.write(`  Open:  ${openUrl}\n`);
-process.stdout.write(`  Code:  ${authorization.userCode}\n\n`);
-process.stdout.write("Waiting for approval…\n");
+process.stdout.write(heading(theme, brand, "connect"));
+process.stdout.write(`\n  ${theme.dim("Sign in to authorise this device.")}\n\n`);
+process.stdout.write(`  ${theme.dim("Open")}  ${theme.accent(openUrl)}\n`);
+process.stdout.write(`  ${theme.dim("Code")}  ${theme.bold(authorization.userCode)}\n\n`);
+const spinner = startSpinner({
+    theme,
+    label: "Waiting for approval…",
+    write: (chunk) => process.stdout.write(chunk),
+    animate: Boolean(process.stdout.isTTY),
+});
 let accessToken;
 try {
     accessToken = await pollForAccessToken({ automationUrl, authorization });
+    spinner.stop(theme.ok("Approved."));
 }
 catch (error) {
+    spinner.stop();
     if (error instanceof DeviceFlowError)
         fail(error.message);
     throw error;
 }
 const transport = { automationUrl, accessToken };
-async function choose(items, heading, label) {
-    process.stdout.write(`\n${heading}\n\n`);
+async function choose(items, prompt, label) {
+    process.stdout.write(`\n  ${theme.bold(prompt)}\n\n`);
     items.forEach((item, index) => {
-        process.stdout.write(`  ${index + 1}. ${label(item)}\n`);
+        process.stdout.write(`    ${theme.accent(String(index + 1).padStart(2))}  ${label(item)}\n`);
     });
     const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const answer = await rl.question(`\nNumber [1-${items.length}]: `);
+    const answer = await rl.question(`\n  ${theme.dim(`Number [1-${items.length}]`)} `);
     rl.close();
     const picked = items[Number(answer.trim()) - 1];
     if (!picked)
@@ -139,7 +149,7 @@ if (!projectUuid) {
     let organisation = named;
     if (!organisation && organisations.length === 1) {
         organisation = organisations[0];
-        process.stdout.write(`\nOrganisation: ${organisation?.name ?? organisation?.slug}\n`);
+        process.stdout.write(`\n  ${theme.dim("Organisation")}  ${organisation?.name ?? organisation?.slug}\n`);
     }
     else if (!organisation && organisations.length > 1) {
         organisation = await choose(organisations, "Which organisation?", (org) => `${org.name ?? org.slug}${org.personal ? " (personal)" : ""}`);
@@ -164,7 +174,7 @@ if (!projectUuid) {
     }
     if (manageable.length === 1) {
         projectUuid = manageable[0]?.uuid;
-        process.stdout.write(`\nProject: ${manageable[0]?.name}\n`);
+        process.stdout.write(`  ${theme.dim("Project")}       ${manageable[0]?.name}\n`);
     }
     else {
         const choice = await choose(manageable, "Which project?", (project) => project.name);
@@ -186,8 +196,8 @@ if (args.install) {
     const values = { BRAND: brand };
     const claude = installClaudeCodePlugin({ apiKey: created.rawKey, environment });
     process.stdout.write(claude.installed
-        ? "\nClaude Code: installed and configured, key stored in your keychain.\n"
-        : `\nClaude Code: skipped (${claude.reason}).\n`);
+        ? `\n  ${theme.ok("✓")} ${theme.bold("Claude Code")} ${theme.dim("configured, key stored in your keychain")}\n`
+        : `\n  ${theme.dim("–")} ${theme.bold("Claude Code")} ${theme.dim(`skipped (${claude.reason})`)}\n`);
     const context = {
         scope: "user",
         home: homedir(),
@@ -199,20 +209,20 @@ if (args.install) {
     if (local.length) {
         for (const adapter of local) {
             const result = adapter.install(context);
-            process.stdout.write(`${adapter.label}: ${result.path}\n`);
+            process.stdout.write(`  ${theme.ok("✓")} ${theme.bold(adapter.label)} ${theme.dim(result.path)}\n`);
         }
         const targetDirs = [...new Set(local.flatMap((adapter) => adapter.skillsDirs(context)))];
         installSkills({ packageRoot, targetDirs, values });
         writeAgentsMd({ packageRoot, projectRoot: context.cwd, values });
-        process.stdout.write("Skills and AGENTS.md written.\n");
+        process.stdout.write(`  ${theme.ok("✓")} ${theme.dim("Skills and AGENTS.md written")}\n`);
     }
 }
 if (args.json) {
     process.stdout.write(`${JSON.stringify({ apiKey: created.rawKey, maskedKey: created.maskedKey, projectUuid, mcpAccess: args.access }, undefined, 2)}\n`);
 }
 else if (!args.install) {
-    process.stdout.write(`\nCreated a ${args.access === "read" ? "read-only" : "read + write"} key.\n\n`);
-    process.stdout.write(`  export JITERA_API_KEY=${created.rawKey}\n\n`);
-    process.stdout.write("Then run npx @jitera/connect to configure your assistants.\n");
+    process.stdout.write(`\n  ${theme.ok("✓")} ${theme.dim(`Created a ${args.access === "read" ? "read-only" : "read + write"} key.`)}\n\n`);
+    process.stdout.write(`  export JITERA_API_KEY=${theme.bold(created.rawKey)}\n\n`);
+    process.stdout.write(`  ${theme.dim("Then run")} ${theme.accent("npx @jitera/connect")} ${theme.dim("to configure your assistants.")}\n`);
 }
 //# sourceMappingURL=login.js.map
