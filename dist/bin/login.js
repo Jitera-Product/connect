@@ -4,6 +4,14 @@ import { DiscoveryError, discoverDeployment } from "../discovery.js";
 import { UnknownEnvironmentError } from "../environments.js";
 import { DeviceFlowError, pollForAccessToken, requestDeviceAuthorization, } from "../device-flow.js";
 import { GraphqlError, createApiKey, listProjects } from "../graphql.js";
+import { installClaudeCodePlugin } from "../install/claude-code.js";
+import { writeAgentsMd } from "../install/agents-md.js";
+import { installSkills } from "../install/skills.js";
+import { codex } from "../adapters/codex.js";
+import { cursor } from "../adapters/cursor.js";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 const USAGE = [
     "usage: npx @jitera/connect login [--env=<environment>] [options]",
     "",
@@ -12,9 +20,10 @@ const USAGE = [
     "  --read-only          create a read-only key (default is read + write)",
     "  --name=<name>        name for the created key",
     "  --json               print the result as json",
+    "  --install            configure your assistants with the new key",
 ].join("\n");
 function parseArgs(argv) {
-    const args = { access: "read_write", keyName: "Jitera Connect", json: false, help: false };
+    const args = { access: "read_write", keyName: "Jitera Connect", json: false, install: false, help: false };
     for (const arg of argv) {
         if (arg === "login")
             continue;
@@ -28,6 +37,8 @@ function parseArgs(argv) {
             args.access = "read";
         else if (arg === "--json")
             args.json = true;
+        else if (arg === "--install")
+            args.install = true;
         else if (arg === "--help" || arg === "-h")
             args.help = true;
         else
@@ -49,6 +60,7 @@ if (args.unknown) {
     process.exit(2);
 }
 let automationUrl = process.env["JITERA_AUTOMATION_URL"] ?? "";
+let mcpUrl = process.env["JITERA_MCP_URL"] ?? "";
 let brand = "Jitera";
 if (!automationUrl) {
     try {
@@ -57,6 +69,7 @@ if (!automationUrl) {
             studioUrl: process.env["JITERA_STUDIO_URL"],
         });
         automationUrl = deployment.automationUrl;
+        mcpUrl = mcpUrl || deployment.mcpUrl;
         brand = deployment.brand;
     }
     catch (error) {
@@ -134,10 +147,33 @@ catch (error) {
         fail(error.message);
     throw error;
 }
+if (args.install) {
+    const environment = args.environment ?? "studio";
+    const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+    const values = { BRAND: brand };
+    const claude = installClaudeCodePlugin({ apiKey: created.rawKey, environment });
+    process.stdout.write(claude.installed
+        ? "\nClaude Code: installed and configured, key stored in your keychain.\n"
+        : `\nClaude Code: skipped (${claude.reason}).\n`);
+    const context = { scope: "project", home: homedir(), cwd: process.cwd(), mcpUrl };
+    const local = [cursor, codex].filter((adapter) => adapter.detect(context));
+    if (local.length) {
+        for (const adapter of local) {
+            const result = adapter.install(context);
+            process.stdout.write(`${adapter.label}: ${result.path}\n`);
+        }
+        const targetDirs = [...new Set(local.flatMap((adapter) => adapter.skillsDirs(context)))];
+        installSkills({ packageRoot, targetDirs, values });
+        writeAgentsMd({ packageRoot, projectRoot: context.cwd, values });
+        process.stdout.write("Skills and AGENTS.md written.\n");
+        process.stdout.write(`\nFor Cursor and Codex, export the key so they can read it:\n`);
+        process.stdout.write(`  export JITERA_API_KEY=${created.rawKey}\n`);
+    }
+}
 if (args.json) {
     process.stdout.write(`${JSON.stringify({ apiKey: created.rawKey, maskedKey: created.maskedKey, projectUuid, mcpAccess: args.access }, undefined, 2)}\n`);
 }
-else {
+else if (!args.install) {
     process.stdout.write(`\nCreated a ${args.access === "read" ? "read-only" : "read + write"} key.\n\n`);
     process.stdout.write(`  export JITERA_API_KEY=${created.rawKey}\n\n`);
     process.stdout.write("Then run npx @jitera/connect to configure your assistants.\n");

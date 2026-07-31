@@ -1,6 +1,6 @@
 {
   "name": "@jitera/connect",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "description": "Connect AI coding assistants to Jitera projects: documentation, source, and shared project memory",
   "license": "Apache-2.0",
@@ -37,7 +37,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "typecheck": "tsc --noEmit --pretty false -p tsconfig.test.json",
     "test": "node --test \"test/**/*.test.ts\"",
     "validate": "node src/bin/validate.ts",
     "prepublishOnly": "npm run build"
