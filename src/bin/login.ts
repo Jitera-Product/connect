@@ -17,8 +17,8 @@ import {
   type Organisation,
 } from "../graphql.ts";
 import { createTheme, heading, startSpinner } from "../theme.ts";
+import { SelectCancelledError, interactiveSelect } from "../select.ts";
 import { installClaudeCodePlugin } from "../install/claude-code.ts";
-import { writeAgentsMd } from "../install/agents-md.ts";
 import { installSkills } from "../install/skills.ts";
 import { codex } from "../adapters/codex.ts";
 import { cursor } from "../adapters/cursor.ts";
@@ -145,6 +145,22 @@ async function choose<T>(
   prompt: string,
   label: (item: T) => string
 ): Promise<T> {
+  if (process.stdin.isTTY && process.stdout.isTTY) {
+    try {
+      return await interactiveSelect({
+        items,
+        prompt,
+        label,
+        theme,
+        input: process.stdin,
+        output: process.stdout,
+      });
+    } catch (error) {
+      if (error instanceof SelectCancelledError) fail("cancelled.", 130);
+      throw error;
+    }
+  }
+
   process.stdout.write(`\n  ${theme.bold(prompt)}\n\n`);
   items.forEach((item, index) => {
     process.stdout.write(`    ${theme.accent(String(index + 1).padStart(2))}  ${label(item)}\n`);
@@ -186,6 +202,9 @@ if (!projectUuid) {
       "Which organisation?",
       (org) => `${org.name ?? org.slug}${org.personal ? " (personal)" : ""}`
     );
+    process.stdout.write(
+      `\n  ${theme.dim("Organisation")}  ${organisation.name ?? organisation.slug}\n`
+    );
   }
 
   let projects;
@@ -214,6 +233,7 @@ if (!projectUuid) {
   } else {
     const choice = await choose(manageable, "Which project?", (project) => project.name);
     projectUuid = choice.uuid;
+    process.stdout.write(`  ${theme.dim("Project")}       ${choice.name}\n`);
   }
 }
 
@@ -239,6 +259,11 @@ if (args.install) {
       ? `\n  ${theme.ok("✓")} ${theme.bold("Claude Code")} ${theme.dim("configured, key stored in your keychain")}\n`
       : `\n  ${theme.dim("–")} ${theme.bold("Claude Code")} ${theme.dim(`skipped (${claude.reason})`)}\n`
   );
+  if (!claude.installed) {
+    process.stdout.write(
+      `    ${theme.dim("Run /plugin inside Claude Code to install and configure jitera-connect manually.")}\n`
+    );
+  }
 
   const context = {
     scope: "user" as const,
@@ -258,9 +283,13 @@ if (args.install) {
     }
     const targetDirs = [...new Set(local.flatMap((adapter) => adapter.skillsDirs(context)))];
     installSkills({ packageRoot, targetDirs, values });
-    writeAgentsMd({ packageRoot, projectRoot: context.cwd, values });
-    process.stdout.write(`  ${theme.ok("✓")} ${theme.dim("Skills and AGENTS.md written")}\n`);
+    process.stdout.write(`  ${theme.ok("✓")} ${theme.dim("Skills written")}\n`);
   }
+
+  process.stdout.write(
+    `\n  ${theme.dim("Optional:")} ${theme.accent("npx @jitera/connect init")} ` +
+      `${theme.dim("writes committable AGENTS.md instructions at a repo root")}\n`
+  );
 }
 
 if (args.json) {

@@ -15,11 +15,18 @@ export interface RunResult {
 
 export function runNode(
   scriptRelPath: string,
-  options: { input?: unknown; env?: NodeJS.ProcessEnv; args?: readonly string[]; isolatedTmp?: boolean } = {}
+  options: {
+    input?: unknown;
+    env?: NodeJS.ProcessEnv;
+    args?: readonly string[];
+    isolatedTmp?: boolean;
+    cwd?: string;
+  } = {}
 ): Promise<RunResult> {
-  const { input, env = {}, args = [], isolatedTmp = true } = options;
+  const { input, env = {}, args = [], isolatedTmp = true, cwd } = options;
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [join(ROOT, scriptRelPath), ...args], {
+      ...(cwd ? { cwd } : {}),
       env: {
         ...process.env,
         FORCE_COLOR: "0",

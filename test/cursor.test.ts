@@ -131,9 +131,12 @@ test("an empty existing config file is treated as empty rather than malformed", 
   assert.deepEqual(readConfig(join(cwd, ".cursor", "mcp.json")), {});
 });
 
-test("skills directories cover both cross-tool locations", () => {
+test("skills go only to the cross-tool agents directory, never another client's", () => {
   const { home, cwd } = sandbox();
-  const dirs = cursor.skillsDirs({ scope: "project", home, cwd });
-  assert.ok(dirs.some((d) => d.endsWith(join(".agents", "skills"))));
-  assert.ok(dirs.some((d) => d.endsWith(join(".claude", "skills"))));
+  assert.deepEqual(cursor.skillsDirs({ scope: "project", home, cwd }), [
+    join(cwd, ".agents", "skills"),
+  ]);
+  assert.deepEqual(cursor.skillsDirs({ scope: "user", home, cwd }), [
+    join(home, ".agents", "skills"),
+  ]);
 });

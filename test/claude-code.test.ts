@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   MARKETPLACE,
+  MARKETPLACE_NAME,
   PLUGIN_NAME,
   installClaudeCodePlugin,
   isClaudeCodeAvailable,
@@ -15,17 +16,19 @@ interface Invocation {
 }
 
 function runner(
-  outcomes: Record<string, { status: number; stderr?: string }> = {}
+  outcomes: Record<string, { status: number; stdout?: string; stderr?: string }> = {}
 ): { run: CommandRunner; calls: Invocation[] } {
   const calls: Invocation[] = [];
   const run: CommandRunner = (command, args) => {
     calls.push({ command, args });
     const key = args[0] === "--version" ? "version" : args.slice(0, 3).join(" ");
     const outcome = outcomes[key] ?? { status: 0 };
-    return { status: outcome.status, stderr: outcome.stderr ?? "" };
+    return { status: outcome.status, stdout: outcome.stdout ?? "", stderr: outcome.stderr ?? "" };
   };
   return { run, calls };
 }
+
+const INSTALL_KEY = `plugin install ${PLUGIN_NAME}@${MARKETPLACE_NAME}`;
 
 test("claude code is detected by asking the binary for its version", () => {
   const { run, calls } = runner();
@@ -49,7 +52,45 @@ test("the marketplace is added before the plugin is installed", () => {
   assert.ok(commands.some((c) => c.includes(`marketplace add ${MARKETPLACE}`)));
   const install = calls.find((c) => c.args[1] === "install");
   assert.ok(install);
-  assert.equal(install.args[2], PLUGIN_NAME);
+  assert.equal(install.args[2], `${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
+});
+
+test("the marketplace clone is refreshed so the manifest matches this cli", () => {
+  const { run, calls } = runner();
+  installClaudeCodePlugin({ apiKey: "sk", environment: "studio", run });
+  const commands = calls.map((c) => c.args.join(" "));
+  const update = commands.findIndex((c) => c === `plugin marketplace update ${MARKETPLACE_NAME}`);
+  const install = commands.findIndex((c) => c.startsWith("plugin install"));
+  assert.ok(update !== -1, "must refresh the marketplace clone");
+  assert.ok(update < install, "must refresh before installing");
+});
+
+test("a failed marketplace refresh does not stop the install", () => {
+  const { run } = runner({
+    "plugin marketplace update": { status: 1, stderr: "temporarily offline" },
+  });
+  const result = installClaudeCodePlugin({ apiKey: "sk", environment: "studio", run });
+  assert.equal(result.installed, true);
+});
+
+test("an existing install is removed first so version and config are re-resolved", () => {
+  const { run, calls } = runner();
+  installClaudeCodePlugin({ apiKey: "sk", environment: "studio", run });
+  const commands = calls.map((c) => c.args.join(" "));
+  const uninstall = commands.findIndex(
+    (c) => c === `plugin uninstall ${PLUGIN_NAME}@${MARKETPLACE_NAME}`
+  );
+  const install = commands.findIndex((c) => c.startsWith("plugin install"));
+  assert.ok(uninstall !== -1, "must uninstall any existing copy");
+  assert.ok(uninstall < install, "must uninstall before installing");
+});
+
+test("uninstalling nothing is not an error", () => {
+  const { run } = runner({
+    "plugin uninstall jitera-connect@jitera": { status: 1, stderr: "not installed" },
+  });
+  const result = installClaudeCodePlugin({ apiKey: "sk", environment: "studio", run });
+  assert.equal(result.installed, true);
 });
 
 test("the environment and key are passed as config, never typed by the user", () => {
@@ -80,9 +121,32 @@ test("a genuine marketplace failure stops before installing", () => {
 
 test("an install failure surfaces the reason rather than claiming success", () => {
   const { run } = runner({
-    "plugin install jitera-connect": { status: 1, stderr: "plugin validation failed" },
+    [INSTALL_KEY]: { status: 1, stderr: "plugin validation failed" },
   });
   const result = installClaudeCodePlugin({ apiKey: "sk", environment: "studio", run });
   assert.equal(result.installed, false);
   assert.match(result.reason ?? "", /plugin validation failed/);
+});
+
+test("a rejected config is a failure even when the exit code is zero", () => {
+  const { run } = runner({
+    [INSTALL_KEY]: {
+      status: 0,
+      stdout:
+        '✔ Plugin installed\n⚠ Installed, but --config not applied: --config key "environment" ' +
+        "isn't declared in this plugin's userConfig.",
+    },
+  });
+  const result = installClaudeCodePlugin({ apiKey: "sk", environment: "studio", run });
+  assert.equal(result.installed, false);
+  assert.match(result.reason ?? "", /not applied/);
+});
+
+test("a config warning on stderr is caught the same way", () => {
+  const { run } = runner({
+    [INSTALL_KEY]: { status: 0, stderr: "⚠ Installed, but --config not applied: bad key" },
+  });
+  const result = installClaudeCodePlugin({ apiKey: "sk", environment: "studio", run });
+  assert.equal(result.installed, false);
+  assert.match(result.reason ?? "", /not applied/);
 });

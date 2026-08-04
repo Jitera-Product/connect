@@ -1,8 +1,10 @@
 export declare const MARKETPLACE = "jitera-product/connect";
+export declare const MARKETPLACE_NAME = "jitera";
 export declare const PLUGIN_NAME = "jitera-connect";
 export interface CommandRunner {
     (command: string, args: readonly string[]): {
         status: number;
+        stdout: string;
         stderr: string;
     };
 }

@@ -6,7 +6,11 @@ export interface ProxyStreams {
 export interface ProxyConfig {
     readonly url: string;
     readonly apiKey: string;
+    readonly instructions?: string | undefined;
 }
-export declare function runProxy({ url, apiKey }: ProxyConfig, { input, output, log }: ProxyStreams): Promise<void>;
-export declare function configFromEnvironment(env: NodeJS.ProcessEnv): Promise<ProxyConfig>;
+export declare function runProxy({ url, apiKey, instructions }: ProxyConfig, { input, output, log }: ProxyStreams): Promise<void>;
+export interface ProxyEnvironment extends ProxyConfig {
+    readonly brand: string;
+}
+export declare function configFromEnvironment(env: NodeJS.ProcessEnv): Promise<ProxyEnvironment>;
 //# sourceMappingURL=proxy.d.ts.map

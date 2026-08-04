@@ -41,7 +41,7 @@ export const cursor: Adapter = {
 
   skillsDirs({ scope, home, cwd }) {
     const root = scope === "user" ? home : cwd;
-    return [join(root, ".agents", "skills"), join(root, ".claude", "skills")];
+    return [join(root, ".agents", "skills")];
   },
 
   install(context: AdapterContext): AdapterResult {

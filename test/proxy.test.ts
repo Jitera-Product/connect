@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { PassThrough } from "node:stream";
 
-import { configFromEnvironment, runProxy } from "../src/proxy.ts";
+import { configFromEnvironment, runProxy, type ProxyConfig } from "../src/proxy.ts";
 import { UnknownEnvironmentError } from "../src/environments.ts";
+import { stubServer as jsonStubServer } from "./helpers.ts";
 
 interface Stub {
   readonly url: string;
@@ -38,7 +39,11 @@ function stubServer(
   });
 }
 
-async function drive(url: string, lines: string[]): Promise<{ out: string; log: string }> {
+async function drive(
+  url: string,
+  lines: string[],
+  config: Partial<ProxyConfig> = {}
+): Promise<{ out: string; log: string }> {
   const input = new PassThrough();
   const output = new PassThrough();
   const log = new PassThrough();
@@ -48,7 +53,7 @@ async function drive(url: string, lines: string[]): Promise<{ out: string; log: 
   output.on("data", (c: Buffer) => (out += c.toString()));
   log.on("data", (c: Buffer) => (logged += c.toString()));
 
-  const done = runProxy({ url, apiKey: "sk-test" }, { input, output, log });
+  const done = runProxy({ url, apiKey: "sk-test", ...config }, { input, output, log });
   for (const line of lines) input.write(`${line}\n`);
   input.end();
   await done;
@@ -130,6 +135,90 @@ test("blank lines are ignored", async () => {
   const { out } = await drive(s.url, ["", "   ", JSON.stringify({ jsonrpc: "2.0", id: 1, method: "p" })]);
   assert.equal(out.trim().split("\n").length, 1);
   await s.close();
+});
+
+test("configured instructions are injected into an initialize response", async () => {
+  const s = await stubServer();
+  const { out } = await drive(
+    s.url,
+    [JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })],
+    { instructions: "Recall project memory before planning." }
+  );
+  await s.close();
+  const parsed = JSON.parse(out.trim()) as { result: { instructions?: string } };
+  assert.equal(parsed.result.instructions, "Recall project memory before planning.");
+});
+
+test("instructions the remote already sends are never overwritten", async () => {
+  const s = await stubServer((body, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: body["id"],
+        result: { instructions: "server-owned text" },
+      })
+    );
+  });
+  const { out } = await drive(
+    s.url,
+    [JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })],
+    { instructions: "local text" }
+  );
+  await s.close();
+  const parsed = JSON.parse(out.trim()) as { result: { instructions?: string } };
+  assert.equal(parsed.result.instructions, "server-owned text");
+});
+
+test("responses to other methods gain no instructions", async () => {
+  const s = await stubServer();
+  const { out } = await drive(
+    s.url,
+    [JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" })],
+    { instructions: "local text" }
+  );
+  await s.close();
+  const parsed = JSON.parse(out.trim()) as { result: { instructions?: string } };
+  assert.equal(parsed.result.instructions, undefined);
+});
+
+test("an initialize error response is passed through undecorated", async () => {
+  const s = await stubServer((body, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({ jsonrpc: "2.0", id: body["id"], error: { code: -32600, message: "no" } })
+    );
+  });
+  const { out } = await drive(
+    s.url,
+    [JSON.stringify({ jsonrpc: "2.0", id: 3, method: "initialize" })],
+    { instructions: "local text" }
+  );
+  await s.close();
+  const parsed = JSON.parse(out.trim()) as { error?: { code: number }; result?: unknown };
+  assert.equal(parsed.error?.code, -32600);
+  assert.equal(parsed.result, undefined);
+});
+
+test("discovery supplies the brand alongside the endpoint", async () => {
+  const studio = await jsonStubServer((_body, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ mcpUrl: "https://example.test/mcp", brand: "Acme" }));
+  });
+  const config = await configFromEnvironment({
+    JITERA_API_KEY: "k",
+    JITERA_STUDIO_URL: studio.url.replace(/\/mcp$/, ""),
+  });
+  await studio.close();
+  assert.equal(config.brand, "Acme");
+});
+
+test("a url override falls back to the default brand", async () => {
+  const config = await configFromEnvironment({
+    JITERA_MCP_URL: "https://self-hosted.example.com/mcp",
+    JITERA_API_KEY: "k",
+  });
+  assert.equal(config.brand, "Jitera");
 });
 
 test("an explicit url override skips discovery entirely", async () => {

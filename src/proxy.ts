@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
 
 import { discoverDeployment } from "./discovery.ts";
+import { DEFAULT_BRAND } from "./install/render.ts";
 import { McpCallError, postRpc, type JsonRpcRequest } from "./mcp-client.ts";
 
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -14,6 +15,7 @@ export interface ProxyStreams {
 export interface ProxyConfig {
   readonly url: string;
   readonly apiKey: string;
+  readonly instructions?: string | undefined;
 }
 
 function isNotification(request: JsonRpcRequest): boolean {
@@ -24,8 +26,15 @@ function errorResponse(id: string | number, code: number, message: string): stri
   return JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } });
 }
 
+function injectInstructions(response: unknown, instructions: string): void {
+  const result = (response as { result?: Record<string, unknown> } | undefined)?.result;
+  if (result && typeof result === "object" && !result["instructions"]) {
+    result["instructions"] = instructions;
+  }
+}
+
 export async function runProxy(
-  { url, apiKey }: ProxyConfig,
+  { url, apiKey, instructions }: ProxyConfig,
   { input, output, log }: ProxyStreams
 ): Promise<void> {
   const lines = createInterface({ input, crlfDelay: Infinity });
@@ -54,21 +63,29 @@ export async function runProxy(
       continue;
     }
 
+    if (request.method === "initialize" && instructions) {
+      injectInstructions(response, instructions);
+    }
+
     if (!isNotification(request) && response) {
       output.write(`${JSON.stringify(response)}\n`);
     }
   }
 }
 
-export async function configFromEnvironment(env: NodeJS.ProcessEnv): Promise<ProxyConfig> {
+export interface ProxyEnvironment extends ProxyConfig {
+  readonly brand: string;
+}
+
+export async function configFromEnvironment(env: NodeJS.ProcessEnv): Promise<ProxyEnvironment> {
   const apiKey = env["JITERA_API_KEY"] ?? "";
   const override = env["JITERA_MCP_URL"] ?? "";
-  if (override) return { url: override, apiKey };
+  if (override) return { url: override, apiKey, brand: DEFAULT_BRAND };
 
   const environment = env["JITERA_ENVIRONMENT"] ?? "";
   const deployment = await discoverDeployment({
     environment,
     studioUrl: env["JITERA_STUDIO_URL"],
   });
-  return { url: deployment.mcpUrl, apiKey };
+  return { url: deployment.mcpUrl, apiKey, brand: deployment.brand };
 }

@@ -8,7 +8,6 @@ import { codex } from "../adapters/codex.ts";
 import { cursor } from "../adapters/cursor.ts";
 import type { Adapter, AdapterContext, Scope } from "../adapters/types.ts";
 import { MalformedConfigError } from "../mcp-config.ts";
-import { writeAgentsMd } from "../install/agents-md.ts";
 import { DEFAULT_BRAND } from "../install/render.ts";
 import { installSkills, uninstallSkills } from "../install/skills.ts";
 import { DiscoveryError, discoverDeployment } from "../discovery.ts";
@@ -171,20 +170,6 @@ if (!args.skipSkills) {
       ? `  ${theme.ok("✓")} ${theme.bold("Skills")} ${theme.dim(`${skills.skills.length} ${skillVerb} ${targetDirs.join(", ")}`)}\n`
       : `  ${theme.dim("–")} ${theme.bold("Skills")} ${theme.dim(`already up to date in ${targetDirs.join(", ")}`)}\n`
   );
-
-  if (!args.uninstall) {
-    const agents = writeAgentsMd({
-      packageRoot: PACKAGE_ROOT,
-      projectRoot: context.cwd,
-      values,
-      dryRun: args.dryRun,
-    });
-    process.stdout.write(
-      agents.changed
-        ? `  ${theme.ok("✓")} ${theme.bold("Instructions")} ${theme.dim(`${agents.agents.action} block in ${agents.agentsPath}`)}\n`
-        : `  ${theme.dim("–")} ${theme.bold("Instructions")} ${theme.dim(`already up to date in ${agents.agentsPath}`)}\n`
-    );
-  }
 }
 
 if (args.dryRun) {
@@ -193,5 +178,9 @@ if (args.dryRun) {
   process.stdout.write(`\n  ${theme.dim("endpoint")}  ${theme.accent(mcpUrl)}\n`);
   process.stdout.write(
     `  ${theme.dim("export JITERA_API_KEY=<your api key> before starting your assistant")}\n`
+  );
+  process.stdout.write(
+    `  ${theme.dim("Optional:")} ${theme.accent("npx @jitera/connect init")} ` +
+      `${theme.dim("writes committable AGENTS.md instructions at the repo root")}\n`
   );
 }

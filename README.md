@@ -44,6 +44,28 @@ codex plugin marketplace add jitera-product/connect
 npx @jitera/connect
 ```
 
+## shared instructions, committed to the repo
+
+```
+npx @jitera/connect init
+```
+
+Optional. Writes three committable files at the root of the current git
+repository: an AGENTS.md block for teammates whose assistants read repository
+instructions natively rather than through the plugin, a CLAUDE.md that imports
+it, and a .jitera.json recording which deployment this repository belongs to
+(`--env=`, and optionally `--project=<uuid>`). Commit all three.
+
+The .jitera.json marker is what teammates' sessions read: a teammate who has
+not connected yet is told the exact login command for the right environment,
+and a teammate whose plugin points at a different environment gets a mismatch
+warning instead of silently reading the wrong project.
+
+Refuses to run outside a git repository, because instructions written above a
+repo are invisible to assistants that read AGENTS.md and leak into every
+project below them. Connected sessions do not need AGENTS.md: the mcp server
+delivers the same guidance itself.
+
 ## pilot and staging environments
 
 claude code, at install:

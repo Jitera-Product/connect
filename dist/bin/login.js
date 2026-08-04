@@ -5,8 +5,8 @@ import { UnknownEnvironmentError } from "../environments.js";
 import { DeviceFlowError, pollForAccessToken, requestDeviceAuthorization, } from "../device-flow.js";
 import { GraphqlError, createApiKey, listOrganisations, listProjects, } from "../graphql.js";
 import { createTheme, heading, startSpinner } from "../theme.js";
+import { SelectCancelledError, interactiveSelect } from "../select.js";
 import { installClaudeCodePlugin } from "../install/claude-code.js";
-import { writeAgentsMd } from "../install/agents-md.js";
 import { installSkills } from "../install/skills.js";
 import { codex } from "../adapters/codex.js";
 import { cursor } from "../adapters/cursor.js";
@@ -121,6 +121,23 @@ catch (error) {
 }
 const transport = { automationUrl, accessToken };
 async function choose(items, prompt, label) {
+    if (process.stdin.isTTY && process.stdout.isTTY) {
+        try {
+            return await interactiveSelect({
+                items,
+                prompt,
+                label,
+                theme,
+                input: process.stdin,
+                output: process.stdout,
+            });
+        }
+        catch (error) {
+            if (error instanceof SelectCancelledError)
+                fail("cancelled.", 130);
+            throw error;
+        }
+    }
     process.stdout.write(`\n  ${theme.bold(prompt)}\n\n`);
     items.forEach((item, index) => {
         process.stdout.write(`    ${theme.accent(String(index + 1).padStart(2))}  ${label(item)}\n`);
@@ -153,6 +170,7 @@ if (!projectUuid) {
     }
     else if (!organisation && organisations.length > 1) {
         organisation = await choose(organisations, "Which organisation?", (org) => `${org.name ?? org.slug}${org.personal ? " (personal)" : ""}`);
+        process.stdout.write(`\n  ${theme.dim("Organisation")}  ${organisation.name ?? organisation.slug}\n`);
     }
     let projects;
     try {
@@ -179,6 +197,7 @@ if (!projectUuid) {
     else {
         const choice = await choose(manageable, "Which project?", (project) => project.name);
         projectUuid = choice.uuid;
+        process.stdout.write(`  ${theme.dim("Project")}       ${choice.name}\n`);
     }
 }
 let created;
@@ -198,6 +217,9 @@ if (args.install) {
     process.stdout.write(claude.installed
         ? `\n  ${theme.ok("✓")} ${theme.bold("Claude Code")} ${theme.dim("configured, key stored in your keychain")}\n`
         : `\n  ${theme.dim("–")} ${theme.bold("Claude Code")} ${theme.dim(`skipped (${claude.reason})`)}\n`);
+    if (!claude.installed) {
+        process.stdout.write(`    ${theme.dim("Run /plugin inside Claude Code to install and configure jitera-connect manually.")}\n`);
+    }
     const context = {
         scope: "user",
         home: homedir(),
@@ -213,9 +235,10 @@ if (args.install) {
         }
         const targetDirs = [...new Set(local.flatMap((adapter) => adapter.skillsDirs(context)))];
         installSkills({ packageRoot, targetDirs, values });
-        writeAgentsMd({ packageRoot, projectRoot: context.cwd, values });
-        process.stdout.write(`  ${theme.ok("✓")} ${theme.dim("Skills and AGENTS.md written")}\n`);
+        process.stdout.write(`  ${theme.ok("✓")} ${theme.dim("Skills written")}\n`);
     }
+    process.stdout.write(`\n  ${theme.dim("Optional:")} ${theme.accent("npx @jitera/connect init")} ` +
+        `${theme.dim("writes committable AGENTS.md instructions at a repo root")}\n`);
 }
 if (args.json) {
     process.stdout.write(`${JSON.stringify({ apiKey: created.rawKey, maskedKey: created.maskedKey, projectUuid, mcpAccess: args.access }, undefined, 2)}\n`);

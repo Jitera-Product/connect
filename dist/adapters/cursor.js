@@ -27,7 +27,7 @@ export const cursor = {
     },
     skillsDirs({ scope, home, cwd }) {
         const root = scope === "user" ? home : cwd;
-        return [join(root, ".agents", "skills"), join(root, ".claude", "skills")];
+        return [join(root, ".agents", "skills")];
     },
     install(context) {
         const path = this.mcpConfigPath(context);
