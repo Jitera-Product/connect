@@ -28,7 +28,7 @@ export function extractText(result) {
         .join("\n")
         .trim();
 }
-export async function postRpc(request, { url, apiKey, timeoutMs = 5000 }) {
+export async function postRpc(request, { url, apiKey, timeoutMs = 5000, projectUuid }) {
     if (!url)
         throw new McpCallError("no mcp endpoint configured");
     if (!apiKey)
@@ -46,6 +46,7 @@ export async function postRpc(request, { url, apiKey, timeoutMs = 5000 }) {
                 "content-type": "application/json",
                 accept: "application/json, text/event-stream",
                 authorization: `Bearer ${apiKey}`,
+                ...(projectUuid ? { "x-jitera-project": projectUuid } : {}),
             },
             body: JSON.stringify(request),
         });

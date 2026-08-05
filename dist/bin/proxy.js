@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { DiscoveryError } from "../discovery.js";
 import { UnknownEnvironmentError } from "../environments.js";
 import { render } from "../install/render.js";
-import { configFromEnvironment, runProxy } from "../proxy.js";
+import { configFromEnvironment, resolveProjectUuid, runProxy } from "../proxy.js";
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 function loadInstructions(brand) {
     try {
@@ -29,5 +29,10 @@ catch (error) {
     process.stderr.write(`jitera-connect proxy: ${known ? error.message : String(error)}\n`);
     process.exit(2);
 }
-await runProxy({ url: config.url, apiKey: config.apiKey, instructions: loadInstructions(config.brand) }, { input: process.stdin, output: process.stdout, log: process.stderr });
+await runProxy({
+    url: config.url,
+    apiKey: config.apiKey,
+    instructions: loadInstructions(config.brand),
+    projectUuid: resolveProjectUuid(process.env),
+}, { input: process.stdin, output: process.stdout, log: process.stderr });
 //# sourceMappingURL=proxy.js.map

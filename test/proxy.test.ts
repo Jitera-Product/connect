@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { PassThrough } from "node:stream";
 
-import { configFromEnvironment, runProxy, type ProxyConfig } from "../src/proxy.ts";
+import { configFromEnvironment, resolveProjectUuid, runProxy, type ProxyConfig } from "../src/proxy.ts";
 import { UnknownEnvironmentError } from "../src/environments.ts";
 import { stubServer as jsonStubServer } from "./helpers.ts";
 
@@ -198,6 +198,37 @@ test("an initialize error response is passed through undecorated", async () => {
   const parsed = JSON.parse(out.trim()) as { error?: { code: number }; result?: unknown };
   assert.equal(parsed.error?.code, -32600);
   assert.equal(parsed.result, undefined);
+});
+
+test("the repo's project binding rides every request as a header", async () => {
+  const s = await jsonStubServer();
+  const { out } = await drive(
+    s.url,
+    [JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" })],
+    { projectUuid: "proj-42" }
+  );
+  await s.close();
+  assert.equal(s.headers[0]?.["x-jitera-project"], "proj-42");
+  assert.equal((JSON.parse(out.trim()) as { id: number }).id, 1);
+});
+
+test("no binding means no project header", async () => {
+  const s = await jsonStubServer();
+  await drive(s.url, [JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" })]);
+  await s.close();
+  assert.equal(s.headers[0]?.["x-jitera-project"], undefined);
+});
+
+test("an explicit JITERA_PROJECT beats the repository marker", async () => {
+  const { writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { isolatedTmpdir } = await import("./helpers.ts");
+  const root = isolatedTmpdir();
+  writeFileSync(join(root, ".jitera.json"), JSON.stringify({ project: "from-marker" }), "utf8");
+
+  assert.equal(resolveProjectUuid({ JITERA_PROJECT: "from-env" }, root), "from-env");
+  assert.equal(resolveProjectUuid({}, root), "from-marker");
+  assert.equal(resolveProjectUuid({}, isolatedTmpdir()), undefined);
 });
 
 test("discovery supplies the brand alongside the endpoint", async () => {

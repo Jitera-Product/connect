@@ -3,10 +3,12 @@ import { createInterface } from "node:readline/promises";
 import { DiscoveryError, discoverDeployment } from "../discovery.js";
 import { UnknownEnvironmentError } from "../environments.js";
 import { DeviceFlowError, pollForAccessToken, requestDeviceAuthorization, } from "../device-flow.js";
-import { GraphqlError, createApiKey, listOrganisations, listProjects, } from "../graphql.js";
+import { GraphqlError, createApiKey, createUserApiKey, isAuthenticationFailure, listOrganisations, listProjects, } from "../graphql.js";
+import { saveCliSession } from "../cli-session.js";
 import { createTheme, heading, startSpinner } from "../theme.js";
 import { SelectCancelledError, interactiveSelect } from "../select.js";
 import { installClaudeCodePlugin } from "../install/claude-code.js";
+import { installStatusLine } from "../install/statusline.js";
 import { installSkills } from "../install/skills.js";
 import { codex } from "../adapters/codex.js";
 import { cursor } from "../adapters/cursor.js";
@@ -108,9 +110,9 @@ const spinner = startSpinner({
     write: (chunk) => process.stdout.write(chunk),
     animate: Boolean(process.stdout.isTTY),
 });
-let accessToken;
+let tokens;
 try {
-    accessToken = await pollForAccessToken({ automationUrl, authorization });
+    tokens = await pollForAccessToken({ automationUrl, authorization });
     spinner.stop(theme.ok("Approved."));
 }
 catch (error) {
@@ -119,7 +121,16 @@ catch (error) {
         fail(error.message);
     throw error;
 }
-const transport = { automationUrl, accessToken };
+// The stored session is what lets `init` list projects later without another
+// browser round-trip: login once, bind repos as often as needed.
+saveCliSession({
+    automationUrl,
+    environment: args.environment,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    expiresAt: tokens.expiresInSeconds ? Date.now() + tokens.expiresInSeconds * 1000 : undefined,
+});
+const transport = { automationUrl, accessToken: tokens.accessToken };
 async function choose(items, prompt, label) {
     if (process.stdin.isTTY && process.stdout.isTTY) {
         try {
@@ -150,8 +161,24 @@ async function choose(items, prompt, label) {
         fail(`"${answer.trim()}" is not one of the listed options.`, 2);
     return picked;
 }
+let created;
+let keyScope = "user";
 let projectUuid = args.project;
+// User-level first: one key for every project the account can access. Older
+// deployments reject the projectless params, and we fall back to project keys.
 if (!projectUuid) {
+    try {
+        created = await createUserApiKey({ name: args.keyName, mcpAccess: args.access }, transport);
+    }
+    catch (error) {
+        if (!(error instanceof GraphqlError))
+            throw error;
+        if (isAuthenticationFailure(error))
+            fail(error.message);
+        process.stdout.write(`\n  ${theme.dim("This deployment issues project keys only — choosing a project.")}\n`);
+    }
+}
+if (!created && !projectUuid) {
     const organisations = await listOrganisations(transport);
     const named = args.organisation
         ? organisations.find((org) => org.slug === args.organisation)
@@ -200,14 +227,16 @@ if (!projectUuid) {
         process.stdout.write(`  ${theme.dim("Project")}       ${choice.name}\n`);
     }
 }
-let created;
-try {
-    created = await createApiKey({ projectUuid: projectUuid, name: args.keyName, mcpAccess: args.access }, transport);
-}
-catch (error) {
-    if (error instanceof GraphqlError)
-        fail(error.message);
-    throw error;
+if (!created) {
+    keyScope = "project";
+    try {
+        created = await createApiKey({ projectUuid: projectUuid, name: args.keyName, mcpAccess: args.access }, transport);
+    }
+    catch (error) {
+        if (error instanceof GraphqlError)
+            fail(error.message);
+        throw error;
+    }
 }
 if (args.install) {
     const environment = args.environment ?? "studio";
@@ -219,6 +248,12 @@ if (args.install) {
         : `\n  ${theme.dim("–")} ${theme.bold("Claude Code")} ${theme.dim(`skipped (${claude.reason})`)}\n`);
     if (!claude.installed) {
         process.stdout.write(`    ${theme.dim("Run /plugin inside Claude Code to install and configure jitera-connect manually.")}\n`);
+    }
+    else {
+        const status = installStatusLine({ home: homedir() });
+        process.stdout.write(status.installed
+            ? `  ${theme.ok("✓")} ${theme.bold("Status line")} ${theme.dim("connection state shows at the bottom of Claude Code")}\n`
+            : `  ${theme.dim("–")} ${theme.bold("Status line")} ${theme.dim(`skipped (${status.reason})`)}\n`);
     }
     const context = {
         scope: "user",
@@ -241,11 +276,23 @@ if (args.install) {
         `${theme.dim("writes committable AGENTS.md instructions at a repo root")}\n`);
 }
 if (args.json) {
-    process.stdout.write(`${JSON.stringify({ apiKey: created.rawKey, maskedKey: created.maskedKey, projectUuid, mcpAccess: args.access }, undefined, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({
+        apiKey: created.rawKey,
+        maskedKey: created.maskedKey,
+        scope: keyScope,
+        projectUuid: projectUuid ?? null,
+        mcpAccess: args.access,
+    }, undefined, 2)}\n`);
 }
 else if (!args.install) {
-    process.stdout.write(`\n  ${theme.ok("✓")} ${theme.dim(`Created a ${args.access === "read" ? "read-only" : "read + write"} key.`)}\n\n`);
+    const access = args.access === "read" ? "read-only" : "read + write";
+    process.stdout.write(`\n  ${theme.ok("✓")} ${theme.dim(keyScope === "user"
+        ? `Created a user-level ${access} key. It works on every project your account can access.`
+        : `Created a ${access} key.`)}\n\n`);
     process.stdout.write(`  export JITERA_API_KEY=${theme.bold(created.rawKey)}\n\n`);
     process.stdout.write(`  ${theme.dim("Then run")} ${theme.accent("npx @jitera/connect")} ${theme.dim("to configure your assistants.")}\n`);
+    if (keyScope === "user") {
+        process.stdout.write(`  ${theme.dim("Bind each repo to its project with")} ${theme.accent("npx @jitera/connect init")}\n`);
+    }
 }
 //# sourceMappingURL=login.js.map

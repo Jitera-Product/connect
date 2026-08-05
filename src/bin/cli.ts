@@ -9,6 +9,7 @@ import { cursor } from "../adapters/cursor.ts";
 import type { Adapter, AdapterContext, Scope } from "../adapters/types.ts";
 import { MalformedConfigError } from "../mcp-config.ts";
 import { DEFAULT_BRAND } from "../install/render.ts";
+import { readProjectMarker } from "../project-marker.ts";
 import { installSkills, uninstallSkills } from "../install/skills.ts";
 import { DiscoveryError, discoverDeployment } from "../discovery.ts";
 import { UnknownEnvironmentError, resolveStudioUrl } from "../environments.ts";
@@ -115,6 +116,9 @@ const context: AdapterContext = {
   home: homedir(),
   cwd: process.cwd(),
   mcpUrl,
+  // A committed .jitera.json pins these configs to the repo's project, which is
+  // what makes a user-level key work without per-project setup.
+  projectUuid: readProjectMarker(process.cwd())?.project,
   dryRun: args.dryRun,
 };
 

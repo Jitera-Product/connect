@@ -5,6 +5,7 @@ import {
   DEVICE_CODE_GRANT,
   DeviceFlowError,
   pollForAccessToken,
+  refreshAccessToken,
   requestDeviceAuthorization,
   type DeviceAuthorization,
 } from "../src/device-flow.ts";
@@ -86,7 +87,7 @@ test("polling keeps going while authorization is pending", async () => {
   const { fetchImpl, calls } = stub([
     { status: 400, body: { error: "authorization_pending" } },
     { status: 400, body: { error: "authorization_pending" } },
-    { body: { access_token: "at-123" } },
+    { body: { access_token: "at-123", refresh_token: "rt-456", expires_in: 3600 } },
   ]);
   const pending: number[] = [];
 
@@ -98,7 +99,9 @@ test("polling keeps going while authorization is pending", async () => {
     onPending: (attempt) => pending.push(attempt),
   });
 
-  assert.equal(token, "at-123");
+  assert.equal(token.accessToken, "at-123");
+  assert.equal(token.refreshToken, "rt-456");
+  assert.equal(token.expiresInSeconds, 3600);
   assert.deepEqual(pending, [1, 2]);
   assert.equal(calls.length, 3);
   assert.equal(calls[0]?.body.get("grant_type"), DEVICE_CODE_GRANT);
@@ -207,5 +210,47 @@ test("a non json body does not crash the flow", async () => {
   await assert.rejects(
     () => requestDeviceAuthorization({ automationUrl: AUTOMATION, fetchImpl }),
     DeviceFlowError
+  );
+});
+
+test("a token without a refresh token still resolves", async () => {
+  const { fetchImpl } = stub([{ body: { access_token: "at-only" } }]);
+  const token = await pollForAccessToken({
+    automationUrl: AUTOMATION,
+    authorization: AUTHORIZATION,
+    fetchImpl,
+    sleep: noSleep,
+  });
+  assert.equal(token.accessToken, "at-only");
+  assert.equal(token.refreshToken, undefined);
+});
+
+test("a refresh grant exchanges the stored token for a fresh set", async () => {
+  const { fetchImpl, calls } = stub([
+    { body: { access_token: "at-new", refresh_token: "rt-new", expires_in: 7200 } },
+  ]);
+
+  const token = await refreshAccessToken({
+    automationUrl: AUTOMATION,
+    refreshToken: "rt-old",
+    fetchImpl,
+  });
+
+  assert.equal(token.accessToken, "at-new");
+  assert.equal(token.refreshToken, "rt-new");
+  assert.equal(calls[0]?.url, `${AUTOMATION}/oauth/token`);
+  assert.equal(calls[0]?.body.get("grant_type"), "refresh_token");
+  assert.equal(calls[0]?.body.get("refresh_token"), "rt-old");
+});
+
+test("a rejected refresh reports invalid_grant so the caller can re-login", async () => {
+  const { fetchImpl } = stub([{ status: 400, body: { error: "invalid_grant" } }]);
+  await assert.rejects(
+    () => refreshAccessToken({ automationUrl: AUTOMATION, refreshToken: "rt-dead", fetchImpl }),
+    (error: unknown) => {
+      assert.ok(error instanceof DeviceFlowError);
+      assert.equal(error.reason, "invalid_grant");
+      return true;
+    }
   );
 });

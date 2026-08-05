@@ -114,6 +114,65 @@ test("a dry run writes no marker either", async () => {
   assert.ok(!existsSync(join(root, ".jitera.json")));
 });
 
+test("init binds the project from a stored login session", async () => {
+  const { writeFileSync } = await import("node:fs");
+  const { stubServer } = await import("./helpers.ts");
+  const { root, nested } = gitRepo();
+
+  const graphql = await stubServer((body, res) => {
+    const op = (body as { operationName?: string }).operationName;
+    res.writeHead(200, { "content-type": "application/json" });
+    if (op === "ConnectTeams") {
+      return res.end(
+        JSON.stringify({ data: { teams: [{ slug: "acme", name: "Acme", type: "company" }] } })
+      );
+    }
+    res.end(
+      JSON.stringify({
+        data: {
+          projects: {
+            projects: [{ uuid: "proj-uuid-9", name: "Nine", canManageApiKey: true }],
+            errors: null,
+          },
+        },
+      })
+    );
+  });
+
+  const configDir = isolatedTmpdir();
+  writeFileSync(
+    join(configDir, "session.json"),
+    JSON.stringify({
+      automationUrl: graphql.url.replace(/\/mcp$/, ""),
+      environment: "studio-04",
+      accessToken: "at-stored",
+    }),
+    "utf8"
+  );
+
+  const { stdout, code } = await runNode(CONNECT, {
+    args: ["init"],
+    cwd: nested,
+    env: { ...OFFLINE, JITERA_CONNECT_CONFIG_DIR: configDir },
+  });
+  await graphql.close();
+
+  assert.equal(code, 0, stdout);
+  const marker = JSON.parse(readFileSync(join(root, ".jitera.json"), "utf8"));
+  assert.equal(marker.project, "proj-uuid-9");
+  assert.equal(marker.environment, "studio-04", "environment comes from the stored session");
+  assert.match(stdout, /Nine/);
+});
+
+test("init without a session explains how to bind a project", async () => {
+  const { root } = gitRepo();
+  const { stdout, code } = await runNode(CONNECT, { args: ["init"], cwd: root, env: OFFLINE });
+  assert.equal(code, 0);
+  assert.match(stdout, /sign in once|--project=/);
+  const marker = JSON.parse(readFileSync(join(root, ".jitera.json"), "utf8"));
+  assert.equal(marker.project, undefined);
+});
+
 test("init shows its usage on --help", async () => {
   const { stdout, code } = await runNode(CONNECT, { args: ["init", "--help"] });
   assert.equal(code, 0);

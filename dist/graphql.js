@@ -122,14 +122,8 @@ export function toErrorMessages(errors) {
     const single = String(errors).trim();
     return single ? [single] : [];
 }
-export async function createApiKey(options, transport) {
-    const data = await query("ConnectCreateApiKey", CREATE_KEY_DOCUMENT, {
-        params: {
-            projectUuid: options.projectUuid,
-            name: options.name,
-            mcpAccess: options.mcpAccess,
-        },
-    }, transport);
+async function runCreateApiKey(params, noKeyReason, transport) {
+    const data = await query("ConnectCreateApiKey", CREATE_KEY_DOCUMENT, { params }, transport);
     const result = data.createApiKey;
     if (!result)
         throw new GraphqlError("ConnectCreateApiKey", ["the mutation returned no payload"]);
@@ -140,10 +134,20 @@ export async function createApiKey(options, transport) {
         throw new GraphqlError("ConnectCreateApiKey", ["the deployment reported the request unsuccessful"]);
     }
     if (!result.rawKey) {
-        throw new GraphqlError("ConnectCreateApiKey", [
-            "no key was returned. The account may lack permission to manage api keys for this project.",
-        ]);
+        throw new GraphqlError("ConnectCreateApiKey", [noKeyReason]);
     }
     return { rawKey: result.rawKey, maskedKey: result.apiKey?.maskedKey ?? "" };
+}
+export async function createApiKey(options, transport) {
+    return runCreateApiKey({ projectUuid: options.projectUuid, name: options.name, mcpAccess: options.mcpAccess }, "no key was returned. The account may lack permission to manage api keys for this project.", transport);
+}
+// A user-level key: no project in the params. Deployments that predate user
+// keys reject this, and the caller falls back to the project flow.
+export async function createUserApiKey(options, transport) {
+    return runCreateApiKey({ name: options.name, mcpAccess: options.mcpAccess }, "no key was returned. This deployment may not support user-level keys yet.", transport);
+}
+export function isAuthenticationFailure(error) {
+    return (error instanceof GraphqlError &&
+        error.errors.some((message) => /access token was rejected/i.test(message)));
 }
 //# sourceMappingURL=graphql.js.map

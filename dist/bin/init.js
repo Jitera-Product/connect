@@ -3,10 +3,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DiscoveryError, discoverDeployment } from "../discovery.js";
 import { UnknownEnvironmentError } from "../environments.js";
+import { isExpired, loadCliSession, saveCliSession } from "../cli-session.js";
+import { DeviceFlowError, refreshAccessToken } from "../device-flow.js";
+import { GraphqlError, listOrganisations, listProjects } from "../graphql.js";
 import { writeAgentsMd } from "../install/agents-md.js";
 import { DEFAULT_BRAND } from "../install/render.js";
 import { resolveGitRoot } from "../install/project-root.js";
 import { writeProjectMarker } from "../project-marker.js";
+import { InvalidChoiceError, SelectCancelledError, chooseFrom } from "../select.js";
 import { createTheme } from "../theme.js";
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const USAGE = [
@@ -71,6 +75,82 @@ catch (error) {
         throw error;
     process.stdout.write(`  ${theme.dim(`offline, using the default brand "${brand}"`)}\n`);
 }
+// A stored login session ("login once") lets init pick the project here, so
+// the binding lands in .jitera.json without another browser round-trip.
+const session = loadCliSession();
+let projectUuid = args.project;
+let projectName;
+if (!projectUuid && session) {
+    let accessToken = session.accessToken;
+    try {
+        if (isExpired(session)) {
+            if (!session.refreshToken) {
+                throw new DeviceFlowError("expired_token", "the stored sign-in expired. Run login again.");
+            }
+            const refreshed = await refreshAccessToken({
+                automationUrl: session.automationUrl,
+                refreshToken: session.refreshToken,
+            });
+            accessToken = refreshed.accessToken;
+            saveCliSession({
+                ...session,
+                accessToken,
+                refreshToken: refreshed.refreshToken ?? session.refreshToken,
+                expiresAt: refreshed.expiresInSeconds
+                    ? Date.now() + refreshed.expiresInSeconds * 1000
+                    : undefined,
+            });
+        }
+        const transport = { automationUrl: session.automationUrl, accessToken };
+        const organisations = await listOrganisations(transport);
+        const organisation = organisations.length > 1
+            ? await chooseFrom({
+                items: organisations,
+                prompt: "Which organisation?",
+                label: (org) => `${org.name ?? org.slug}${org.personal ? " (personal)" : ""}`,
+                theme,
+            })
+            : organisations[0];
+        const projects = await listProjects(transport, organisation);
+        if (projects.length === 0) {
+            process.stdout.write(`  ${theme.dim("this account has no projects here; pass --project=<uuid> to bind one")}\n`);
+        }
+        else {
+            const choice = projects.length > 1
+                ? await chooseFrom({
+                    items: projects,
+                    prompt: "Which project does this repository belong to?",
+                    label: (project) => project.name,
+                    theme,
+                })
+                : projects[0];
+            projectUuid = choice?.uuid;
+            projectName = choice?.name;
+            if (projectName) {
+                process.stdout.write(`  ${theme.dim("Project")}  ${projectName}\n`);
+            }
+        }
+    }
+    catch (error) {
+        if (error instanceof SelectCancelledError) {
+            process.stderr.write(`\n  error: cancelled.\n`);
+            process.exit(130);
+        }
+        if (error instanceof InvalidChoiceError) {
+            process.stderr.write(`error: ${error.message}\n`);
+            process.exit(2);
+        }
+        if (error instanceof DeviceFlowError || error instanceof GraphqlError) {
+            process.stdout.write(`  ${theme.dim(`could not list projects (${error.message}); pass --project=<uuid>`)}\n`);
+        }
+        else {
+            throw error;
+        }
+    }
+}
+else if (!projectUuid) {
+    process.stdout.write(`  ${theme.dim("sign in once with the login command to pick a project here, or pass --project=<uuid>")}\n`);
+}
 const result = writeAgentsMd({
     packageRoot: PACKAGE_ROOT,
     projectRoot,
@@ -79,11 +159,12 @@ const result = writeAgentsMd({
 });
 process.stdout.write(`  ${result.agents.changed ? theme.ok("✓") : theme.dim("–")} ${theme.bold("AGENTS.md")} ${theme.dim(`${result.agents.action} in ${result.agentsPath}`)}\n`);
 process.stdout.write(`  ${result.claude.changed ? theme.ok("✓") : theme.dim("–")} ${theme.bold("CLAUDE.md")} ${theme.dim(`${result.claude.action} in ${result.claudePath}`)}\n`);
+const environment = args.environment ?? session?.environment ?? "studio";
 const marker = writeProjectMarker(projectRoot, {
-    environment: args.environment ?? "studio",
-    ...(args.project ? { project: args.project } : {}),
+    environment,
+    ...(projectUuid ? { project: projectUuid } : {}),
 }, args.dryRun);
-process.stdout.write(`  ${marker.changed ? theme.ok("✓") : theme.dim("–")} ${theme.bold(".jitera.json")} ${theme.dim(`environment "${args.environment ?? "studio"}"${args.project ? `, project ${args.project}` : ""}`)}\n`);
+process.stdout.write(`  ${marker.changed ? theme.ok("✓") : theme.dim("–")} ${theme.bold(".jitera.json")} ${theme.dim(`environment "${environment}"${projectUuid ? `, project ${projectUuid}` : ""}`)}\n`);
 if (args.dryRun) {
     process.stdout.write(`\n  ${theme.dim("dry run, nothing was written")}\n`);
 }

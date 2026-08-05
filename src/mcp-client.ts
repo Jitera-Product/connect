@@ -60,11 +60,14 @@ export interface TransportOptions {
   readonly url: string;
   readonly apiKey: string;
   readonly timeoutMs?: number;
+  // With a user-level key the gateway cannot infer the project, so requests
+  // carry the repo's binding explicitly. Project-scoped keys ignore it.
+  readonly projectUuid?: string | undefined;
 }
 
 export async function postRpc(
   request: JsonRpcRequest,
-  { url, apiKey, timeoutMs = 5000 }: TransportOptions
+  { url, apiKey, timeoutMs = 5000, projectUuid }: TransportOptions
 ): Promise<JsonRpcResponse | undefined> {
   if (!url) throw new McpCallError("no mcp endpoint configured");
   if (!apiKey) throw new McpCallError("no api key configured");
@@ -83,6 +86,7 @@ export async function postRpc(
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
         authorization: `Bearer ${apiKey}`,
+        ...(projectUuid ? { "x-jitera-project": projectUuid } : {}),
       },
       body: JSON.stringify(request),
     });

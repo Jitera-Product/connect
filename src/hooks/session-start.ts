@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { emitContext, readHookInput } from "../hook-io.ts";
 import { readProjectMarker } from "../project-marker.ts";
+import { writeSessionStatus } from "../session-status.ts";
 
 const CONTENT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "content");
 
@@ -28,6 +29,12 @@ try {
 // who have not connected yet get the exact command, and a mismatched plugin
 // configuration is called out instead of silently reading the wrong project.
 const marker = readProjectMarker(input.cwd ?? process.cwd());
+
+writeSessionStatus(input.session_id, {
+  configured: Boolean(apiKey),
+  environment: configuredEnvironment || "studio",
+});
+
 if (marker?.environment) {
   const login = `npx @jitera/connect login --env=${marker.environment} --install`;
   if (!apiKey) {

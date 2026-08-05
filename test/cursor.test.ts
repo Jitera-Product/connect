@@ -131,6 +131,26 @@ test("an empty existing config file is treated as empty rather than malformed", 
   assert.deepEqual(readConfig(join(cwd, ".cursor", "mcp.json")), {});
 });
 
+test("a bound repo pins the project header in the cursor config", () => {
+  const { home, cwd } = sandbox();
+  const { path } = cursor.install({
+    scope: "project",
+    home,
+    cwd,
+    mcpUrl: MCP_URL,
+    projectUuid: "proj-7",
+  });
+  const server = JSON.parse(readFileSync(path, "utf8")).mcpServers.jitera;
+  assert.equal(server.headers["X-Jitera-Project"], "proj-7");
+});
+
+test("no binding adds no project header for cursor", () => {
+  const { home, cwd } = sandbox();
+  const { path } = cursor.install({ scope: "project", home, cwd, mcpUrl: MCP_URL });
+  const server = JSON.parse(readFileSync(path, "utf8")).mcpServers.jitera;
+  assert.equal(server.headers["X-Jitera-Project"], undefined);
+});
+
 test("skills go only to the cross-tool agents directory, never another client's", () => {
   const { home, cwd } = sandbox();
   assert.deepEqual(cursor.skillsDirs({ scope: "project", home, cwd }), [

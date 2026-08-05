@@ -34,5 +34,10 @@ export declare function createApiKey(options: {
     readonly name: string;
     readonly mcpAccess: McpAccess;
 }, transport: GraphqlTransport): Promise<CreatedApiKey>;
+export declare function createUserApiKey(options: {
+    readonly name: string;
+    readonly mcpAccess: McpAccess;
+}, transport: GraphqlTransport): Promise<CreatedApiKey>;
+export declare function isAuthenticationFailure(error: unknown): boolean;
 export {};
 //# sourceMappingURL=graphql.d.ts.map

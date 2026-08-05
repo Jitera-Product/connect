@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { DiscoveryError } from "../discovery.ts";
 import { UnknownEnvironmentError } from "../environments.ts";
 import { render } from "../install/render.ts";
-import { configFromEnvironment, runProxy } from "../proxy.ts";
+import { configFromEnvironment, resolveProjectUuid, runProxy } from "../proxy.ts";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -36,6 +36,11 @@ try {
 }
 
 await runProxy(
-  { url: config.url, apiKey: config.apiKey, instructions: loadInstructions(config.brand) },
+  {
+    url: config.url,
+    apiKey: config.apiKey,
+    instructions: loadInstructions(config.brand),
+    projectUuid: resolveProjectUuid(process.env),
+  },
   { input: process.stdin, output: process.stdout, log: process.stderr }
 );

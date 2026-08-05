@@ -57,6 +57,30 @@ export async function requestDeviceAuthorization({ automationUrl, clientId = CLI
         intervalSeconds: Number(payload["interval"] ?? DEFAULT_INTERVAL_SECONDS),
     };
 }
+function toTokenSet(payload) {
+    return {
+        accessToken: String(payload["access_token"]),
+        refreshToken: typeof payload["refresh_token"] === "string" && payload["refresh_token"]
+            ? payload["refresh_token"]
+            : undefined,
+        expiresInSeconds: typeof payload["expires_in"] === "number" ? payload["expires_in"] : undefined,
+    };
+}
+export async function refreshAccessToken({ automationUrl, refreshToken, clientId = CLIENT_ID, fetchImpl = fetch, }) {
+    const url = endpoint(automationUrl, "/oauth/token");
+    let result;
+    try {
+        result = await postForm(url, { grant_type: "refresh_token", refresh_token: refreshToken, client_id: clientId }, fetchImpl);
+    }
+    catch (error) {
+        throw new DeviceFlowError("transport", `could not reach ${url}: ${error.message}`);
+    }
+    const { payload } = result;
+    if (typeof payload["access_token"] === "string" && payload["access_token"]) {
+        return toTokenSet(payload);
+    }
+    throw new DeviceFlowError("invalid_grant", `the stored sign-in expired: ${String(payload["error_description"] ?? payload["error"] ?? "unknown error")}. Run login again.`);
+}
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function pollForAccessToken({ automationUrl, authorization, clientId = CLIENT_ID, fetchImpl = fetch, sleep = wait, now = () => Date.now(), onPending, }) {
     const url = endpoint(automationUrl, "/oauth/token");
@@ -80,7 +104,7 @@ export async function pollForAccessToken({ automationUrl, authorization, clientI
         const { payload } = result;
         const token = payload["access_token"];
         if (typeof token === "string" && token)
-            return token;
+            return toTokenSet(payload);
         const error = String(payload["error"] ?? "");
         switch (error) {
             case "authorization_pending":

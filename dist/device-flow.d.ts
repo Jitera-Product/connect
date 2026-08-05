@@ -20,11 +20,20 @@ export interface DeviceFlowTransport {
     readonly fetchImpl?: typeof fetch;
 }
 export declare function requestDeviceAuthorization({ automationUrl, clientId, fetchImpl, }: DeviceFlowTransport): Promise<DeviceAuthorization>;
+export interface TokenSet {
+    readonly accessToken: string;
+    readonly refreshToken?: string | undefined;
+    readonly expiresInSeconds?: number | undefined;
+}
+export interface RefreshOptions extends DeviceFlowTransport {
+    readonly refreshToken: string;
+}
+export declare function refreshAccessToken({ automationUrl, refreshToken, clientId, fetchImpl, }: RefreshOptions): Promise<TokenSet>;
 export interface PollOptions extends DeviceFlowTransport {
     readonly authorization: DeviceAuthorization;
     readonly sleep?: (ms: number) => Promise<void>;
     readonly now?: () => number;
     readonly onPending?: (attempt: number) => void;
 }
-export declare function pollForAccessToken({ automationUrl, authorization, clientId, fetchImpl, sleep, now, onPending, }: PollOptions): Promise<string>;
+export declare function pollForAccessToken({ automationUrl, authorization, clientId, fetchImpl, sleep, now, onPending, }: PollOptions): Promise<TokenSet>;
 //# sourceMappingURL=device-flow.d.ts.map

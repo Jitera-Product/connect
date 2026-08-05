@@ -128,3 +128,25 @@ test("oversized memory is truncated with a pointer to the tool", async () => {
   assert.match(ctx, /truncated/);
   await server.close();
 });
+
+test("recall carries the repo's project binding as a header", async () => {
+  const { writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const server = await toolTextServer("remembered");
+  const dir = isolatedTmpdir();
+  writeFileSync(join(dir, ".jitera.json"), JSON.stringify({ project: "proj-9" }), "utf8");
+
+  await runNode(HOOK, { input: { session_id: "s7", cwd: dir }, env: env(server.url) });
+  await server.close();
+  assert.equal(server.headers[0]?.["x-jitera-project"], "proj-9");
+});
+
+test("no repo binding sends no project header", async () => {
+  const server = await toolTextServer("remembered");
+  await runNode(HOOK, {
+    input: { session_id: "s8", cwd: isolatedTmpdir() },
+    env: env(server.url),
+  });
+  await server.close();
+  assert.equal(server.headers[0]?.["x-jitera-project"], undefined);
+});

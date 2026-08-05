@@ -5,6 +5,8 @@ if (subcommand === "login") {
   await import("./login.ts");
 } else if (subcommand === "init") {
   await import("./init.ts");
+} else if (subcommand === "statusline") {
+  await import("./statusline.ts");
 } else {
   await import("./cli.ts");
 }

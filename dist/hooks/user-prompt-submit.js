@@ -2,7 +2,9 @@
 import { callTool, McpCallError } from "../mcp-client.js";
 import { discoverDeployment } from "../discovery.js";
 import { emitContext, readHookInput } from "../hook-io.js";
+import { readProjectMarker } from "../project-marker.js";
 import { claimOnce } from "../session-marker.js";
+import { writeSessionStatus } from "../session-status.js";
 const MAX_CONTEXT_CHARS = 6000;
 const RECALL_TIMEOUT_MS = 8000;
 const input = readHookInput();
@@ -30,10 +32,12 @@ else {
     }
 }
 let memory;
+const startedAt = Date.now();
 try {
     memory = await callTool({
         url,
         apiKey,
+        projectUuid: readProjectMarker(input.cwd ?? process.cwd())?.project,
         name: "recall_jitera_memory",
         args: {},
         timeoutMs: RECALL_TIMEOUT_MS,
@@ -41,9 +45,15 @@ try {
 }
 catch (error) {
     const message = error instanceof McpCallError ? error.message : String(error);
+    writeSessionStatus(input.session_id, { recallError: message });
     process.stderr.write(`jitera-connect: could not load project memory: ${message}\n`);
     process.exit(0);
 }
+writeSessionStatus(input.session_id, {
+    recallMs: Date.now() - startedAt,
+    recallChars: memory.length,
+    recallError: undefined,
+});
 if (!memory)
     process.exit(0);
 const body = memory.length > MAX_CONTEXT_CHARS

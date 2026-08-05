@@ -3,6 +3,17 @@ export declare class SelectCancelledError extends Error {
     readonly name = "SelectCancelledError";
     constructor();
 }
+export declare class InvalidChoiceError extends Error {
+    readonly name = "InvalidChoiceError";
+    readonly answer: string;
+    constructor(answer: string);
+}
+export declare function chooseFrom<T>({ items, prompt, label, theme, }: {
+    readonly items: readonly T[];
+    readonly prompt: string;
+    readonly label: (item: T) => string;
+    readonly theme: Theme;
+}): Promise<T>;
 export interface SelectInput {
     setRawMode?(mode: boolean): unknown;
     resume?(): unknown;

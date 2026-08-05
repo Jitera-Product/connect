@@ -36,6 +36,10 @@ interface ReplayOptions {
   readonly projects?: { uuid: string; name: string; canManageApiKey?: boolean }[];
   readonly teams?: { slug: string; name: string; type: string }[];
   readonly createKeyResponse?: unknown;
+  // When set, a params object WITHOUT projectUuid gets this response — the
+  // new-backend, user-level key path. Unset models today's deployments, which
+  // reject a projectless create.
+  readonly userKeyResponse?: unknown;
 }
 
 function replayServer(options: ReplayOptions = {}): Promise<Replay> {
@@ -78,12 +82,20 @@ function replayServer(options: ReplayOptions = {}): Promise<Replay> {
       }
 
       if (req.url === "/graphql") {
-        const body = JSON.parse(raw) as { operationName?: string; variables?: unknown };
+        const body = JSON.parse(raw) as {
+          operationName?: string;
+          variables?: { params?: { projectUuid?: string } };
+        };
+        seen.push(`gql ${body.operationName}`);
         if (body.operationName === "ConnectTeams") return json(200, { data: { teams } });
         if (body.operationName === "ConnectProjects")
           return json(200, { data: { projects: { projects, errors: null } } });
         if (body.operationName === "ConnectCreateApiKey") {
           seen.push(`createApiKey ${JSON.stringify(body.variables)}`);
+          if (!body.variables?.params?.projectUuid) {
+            if (options.userKeyResponse !== undefined) return json(200, options.userKeyResponse);
+            return json(200, { errors: [{ message: "api_key: invalid input" }] });
+          }
           return json(200, createKeyResponse);
         }
         return json(200, { errors: [{ message: `unexpected operation ${body.operationName}` }] });
@@ -105,6 +117,72 @@ function replayServer(options: ReplayOptions = {}): Promise<Replay> {
     });
   });
 }
+
+test("a deployment with user-level keys needs no project at all", async () => {
+  const server = await replayServer({
+    userKeyResponse: {
+      data: {
+        createApiKey: { rawKey: "sk-user-key-1", errors: null, apiKey: { maskedKey: "sk-…er1" } },
+      },
+    },
+  });
+  const { stdout, code } = await runNode(LOGIN, {
+    args: ["--json"],
+    env: { JITERA_AUTOMATION_URL: server.url },
+  });
+
+  assert.equal(code, 0, `login exited ${code}: ${stdout}`);
+  const result = JSON.parse(stdout.slice(stdout.indexOf("{"))) as {
+    apiKey: string;
+    scope: string;
+    projectUuid: string | null;
+  };
+  assert.equal(result.apiKey, "sk-user-key-1");
+  assert.equal(result.scope, "user");
+  assert.equal(result.projectUuid, null);
+  assert.ok(!server.seen.includes("gql ConnectProjects"), "no project listing for a user key");
+  assert.ok(!server.seen.includes("gql ConnectTeams"), "no organisation lookup for a user key");
+  await server.close();
+});
+
+test("a user-level login points at init for repo binding", async () => {
+  const server = await replayServer({
+    userKeyResponse: {
+      data: { createApiKey: { rawKey: "sk-user-key-2", errors: null, apiKey: null } },
+    },
+  });
+  const { stdout } = await runNode(LOGIN, { env: { JITERA_AUTOMATION_URL: server.url } });
+  assert.match(stdout, /user-level/);
+  assert.match(stdout, /init/);
+  await server.close();
+});
+
+test("older deployments fall back to the project flow with a notice", async () => {
+  const server = await replayServer();
+  const { stdout, code } = await runNode(LOGIN, {
+    args: ["--json"],
+    env: { JITERA_AUTOMATION_URL: server.url },
+  });
+
+  assert.equal(code, 0, `login exited ${code}: ${stdout}`);
+  assert.match(stdout, /project keys only/);
+  const result = JSON.parse(stdout.slice(stdout.indexOf("{"))) as { scope: string };
+  assert.equal(result.scope, "project");
+  assert.ok(server.seen.includes("gql ConnectProjects"), "fallback must list projects");
+  await server.close();
+});
+
+test("an explicit --project skips the user-level attempt entirely", async () => {
+  const server = await replayServer();
+  await runNode(LOGIN, {
+    args: ["--json", "--project=proj-uuid-1"],
+    env: { JITERA_AUTOMATION_URL: server.url },
+  });
+  const creates = server.seen.filter((s) => s.startsWith("createApiKey"));
+  assert.equal(creates.length, 1);
+  assert.ok(creates[0]?.includes("proj-uuid-1"));
+  await server.close();
+});
 
 test("login walks the whole flow and prints an api key", async () => {
   const server = await replayServer();

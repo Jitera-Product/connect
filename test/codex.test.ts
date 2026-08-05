@@ -129,3 +129,16 @@ test("codex reads skills from the cross-tool agents directory", () => {
     join(cwd, ".agents", "skills"),
   ]);
 });
+
+test("a bound repo pins the project header in the codex config", () => {
+  const { home, cwd, path } = sandbox();
+  codex.install({ scope: "user", home, cwd, mcpUrl: MCP_URL, apiKey: "sk", projectUuid: "proj-7" });
+  const written = readFileSync(path, "utf8");
+  assert.match(written, /http_headers = \{ "X-Jitera-Project" = "proj-7" \}/);
+});
+
+test("no binding writes no header line", () => {
+  const { home, cwd, path } = sandbox();
+  codex.install({ scope: "user", home, cwd, mcpUrl: MCP_URL, apiKey: "sk" });
+  assert.ok(!readFileSync(path, "utf8").includes("http_headers"));
+});

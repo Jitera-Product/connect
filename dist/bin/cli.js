@@ -7,6 +7,7 @@ import { codex } from "../adapters/codex.js";
 import { cursor } from "../adapters/cursor.js";
 import { MalformedConfigError } from "../mcp-config.js";
 import { DEFAULT_BRAND } from "../install/render.js";
+import { readProjectMarker } from "../project-marker.js";
 import { installSkills, uninstallSkills } from "../install/skills.js";
 import { DiscoveryError, discoverDeployment } from "../discovery.js";
 import { UnknownEnvironmentError, resolveStudioUrl } from "../environments.js";
@@ -104,6 +105,9 @@ const context = {
     home: homedir(),
     cwd: process.cwd(),
     mcpUrl,
+    // A committed .jitera.json pins these configs to the repo's project, which is
+    // what makes a user-level key work without per-project setup.
+    projectUuid: readProjectMarker(process.cwd())?.project,
     dryRun: args.dryRun,
 };
 const detected = ADAPTERS.filter((adapter) => adapter.detect(context));

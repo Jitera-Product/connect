@@ -102,6 +102,56 @@ export async function requestDeviceAuthorization({
   };
 }
 
+export interface TokenSet {
+  readonly accessToken: string;
+  readonly refreshToken?: string | undefined;
+  readonly expiresInSeconds?: number | undefined;
+}
+
+function toTokenSet(payload: Record<string, unknown>): TokenSet {
+  return {
+    accessToken: String(payload["access_token"]),
+    refreshToken:
+      typeof payload["refresh_token"] === "string" && payload["refresh_token"]
+        ? payload["refresh_token"]
+        : undefined,
+    expiresInSeconds:
+      typeof payload["expires_in"] === "number" ? payload["expires_in"] : undefined,
+  };
+}
+
+export interface RefreshOptions extends DeviceFlowTransport {
+  readonly refreshToken: string;
+}
+
+export async function refreshAccessToken({
+  automationUrl,
+  refreshToken,
+  clientId = CLIENT_ID,
+  fetchImpl = fetch,
+}: RefreshOptions): Promise<TokenSet> {
+  const url = endpoint(automationUrl, "/oauth/token");
+  let result;
+  try {
+    result = await postForm(
+      url,
+      { grant_type: "refresh_token", refresh_token: refreshToken, client_id: clientId },
+      fetchImpl
+    );
+  } catch (error) {
+    throw new DeviceFlowError("transport", `could not reach ${url}: ${(error as Error).message}`);
+  }
+
+  const { payload } = result;
+  if (typeof payload["access_token"] === "string" && payload["access_token"]) {
+    return toTokenSet(payload);
+  }
+  throw new DeviceFlowError(
+    "invalid_grant",
+    `the stored sign-in expired: ${String(payload["error_description"] ?? payload["error"] ?? "unknown error")}. Run login again.`
+  );
+}
+
 export interface PollOptions extends DeviceFlowTransport {
   readonly authorization: DeviceAuthorization;
   readonly sleep?: (ms: number) => Promise<void>;
@@ -119,7 +169,7 @@ export async function pollForAccessToken({
   sleep = wait,
   now = () => Date.now(),
   onPending,
-}: PollOptions): Promise<string> {
+}: PollOptions): Promise<TokenSet> {
   const url = endpoint(automationUrl, "/oauth/token");
   const deadline = now() + authorization.expiresInSeconds * 1000;
   let intervalSeconds = authorization.intervalSeconds || DEFAULT_INTERVAL_SECONDS;
@@ -146,7 +196,7 @@ export async function pollForAccessToken({
 
     const { payload } = result;
     const token = payload["access_token"];
-    if (typeof token === "string" && token) return token;
+    if (typeof token === "string" && token) return toTokenSet(payload);
 
     const error = String(payload["error"] ?? "");
     switch (error) {

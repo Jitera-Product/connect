@@ -30,6 +30,8 @@ export function runNode(
       env: {
         ...process.env,
         FORCE_COLOR: "0",
+        // Keep bin runs from ever touching the real ~/.config session store.
+        JITERA_CONNECT_CONFIG_DIR: mkdtempSync(join(tmpdir(), "jc-config-")),
         ...(isolatedTmp ? { TMPDIR: mkdtempSync(join(tmpdir(), "jc-test-")) } : {}),
         ...env,
       },

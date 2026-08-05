@@ -2,7 +2,16 @@ import { createInterface } from "node:readline";
 import { discoverDeployment } from "./discovery.js";
 import { DEFAULT_BRAND } from "./install/render.js";
 import { McpCallError, postRpc } from "./mcp-client.js";
+import { readProjectMarker } from "./project-marker.js";
 const REQUEST_TIMEOUT_MS = 30_000;
+// The repository's committed .jitera.json binds the workspace to a project;
+// an explicit JITERA_PROJECT env always wins.
+export function resolveProjectUuid(env, cwd = process.cwd()) {
+    const override = (env["JITERA_PROJECT"] ?? "").trim();
+    if (override)
+        return override;
+    return readProjectMarker(cwd)?.project;
+}
 function isNotification(request) {
     return request.id === undefined || request.id === null;
 }
@@ -15,7 +24,7 @@ function injectInstructions(response, instructions) {
         result["instructions"] = instructions;
     }
 }
-export async function runProxy({ url, apiKey, instructions }, { input, output, log }) {
+export async function runProxy({ url, apiKey, instructions, projectUuid }, { input, output, log }) {
     const lines = createInterface({ input, crlfDelay: Infinity });
     for await (const line of lines) {
         const trimmed = line.trim();
@@ -31,7 +40,7 @@ export async function runProxy({ url, apiKey, instructions }, { input, output, l
         }
         let response;
         try {
-            response = await postRpc(request, { url, apiKey, timeoutMs: REQUEST_TIMEOUT_MS });
+            response = await postRpc(request, { url, apiKey, projectUuid, timeoutMs: REQUEST_TIMEOUT_MS });
         }
         catch (error) {
             const message = error instanceof McpCallError ? error.message : String(error);

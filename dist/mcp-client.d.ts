@@ -33,8 +33,9 @@ export interface TransportOptions {
     readonly url: string;
     readonly apiKey: string;
     readonly timeoutMs?: number;
+    readonly projectUuid?: string | undefined;
 }
-export declare function postRpc(request: JsonRpcRequest, { url, apiKey, timeoutMs }: TransportOptions): Promise<JsonRpcResponse | undefined>;
+export declare function postRpc(request: JsonRpcRequest, { url, apiKey, timeoutMs, projectUuid }: TransportOptions): Promise<JsonRpcResponse | undefined>;
 export interface CallToolOptions extends TransportOptions {
     readonly name: string;
     readonly args?: Record<string, unknown>;

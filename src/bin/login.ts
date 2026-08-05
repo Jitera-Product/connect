@@ -11,14 +11,19 @@ import {
 import {
   GraphqlError,
   createApiKey,
+  createUserApiKey,
+  isAuthenticationFailure,
   listOrganisations,
   listProjects,
+  type CreatedApiKey,
   type McpAccess,
   type Organisation,
 } from "../graphql.ts";
+import { saveCliSession } from "../cli-session.ts";
 import { createTheme, heading, startSpinner } from "../theme.ts";
 import { SelectCancelledError, interactiveSelect } from "../select.ts";
 import { installClaudeCodePlugin } from "../install/claude-code.ts";
+import { installStatusLine } from "../install/statusline.ts";
 import { installSkills } from "../install/skills.ts";
 import { codex } from "../adapters/codex.ts";
 import { cursor } from "../adapters/cursor.ts";
@@ -128,9 +133,9 @@ const spinner = startSpinner({
   animate: Boolean(process.stdout.isTTY),
 });
 
-let accessToken;
+let tokens;
 try {
-  accessToken = await pollForAccessToken({ automationUrl, authorization });
+  tokens = await pollForAccessToken({ automationUrl, authorization });
   spinner.stop(theme.ok("Approved."));
 } catch (error) {
   spinner.stop();
@@ -138,7 +143,17 @@ try {
   throw error;
 }
 
-const transport = { automationUrl, accessToken };
+// The stored session is what lets `init` list projects later without another
+// browser round-trip: login once, bind repos as often as needed.
+saveCliSession({
+  automationUrl,
+  environment: args.environment,
+  accessToken: tokens.accessToken,
+  refreshToken: tokens.refreshToken,
+  expiresAt: tokens.expiresInSeconds ? Date.now() + tokens.expiresInSeconds * 1000 : undefined,
+});
+
+const transport = { automationUrl, accessToken: tokens.accessToken };
 
 async function choose<T>(
   items: readonly T[],
@@ -173,8 +188,25 @@ async function choose<T>(
   return picked as T;
 }
 
+let created: CreatedApiKey | undefined;
+let keyScope: "user" | "project" = "user";
 let projectUuid = args.project;
+
+// User-level first: one key for every project the account can access. Older
+// deployments reject the projectless params, and we fall back to project keys.
 if (!projectUuid) {
+  try {
+    created = await createUserApiKey({ name: args.keyName, mcpAccess: args.access }, transport);
+  } catch (error) {
+    if (!(error instanceof GraphqlError)) throw error;
+    if (isAuthenticationFailure(error)) fail(error.message);
+    process.stdout.write(
+      `\n  ${theme.dim("This deployment issues project keys only — choosing a project.")}\n`
+    );
+  }
+}
+
+if (!created && !projectUuid) {
   const organisations = await listOrganisations(transport);
   const named = args.organisation
     ? organisations.find((org) => org.slug === args.organisation)
@@ -237,15 +269,17 @@ if (!projectUuid) {
   }
 }
 
-let created;
-try {
-  created = await createApiKey(
-    { projectUuid: projectUuid as string, name: args.keyName, mcpAccess: args.access },
-    transport
-  );
-} catch (error) {
-  if (error instanceof GraphqlError) fail(error.message);
-  throw error;
+if (!created) {
+  keyScope = "project";
+  try {
+    created = await createApiKey(
+      { projectUuid: projectUuid as string, name: args.keyName, mcpAccess: args.access },
+      transport
+    );
+  } catch (error) {
+    if (error instanceof GraphqlError) fail(error.message);
+    throw error;
+  }
 }
 
 if (args.install) {
@@ -262,6 +296,13 @@ if (args.install) {
   if (!claude.installed) {
     process.stdout.write(
       `    ${theme.dim("Run /plugin inside Claude Code to install and configure jitera-connect manually.")}\n`
+    );
+  } else {
+    const status = installStatusLine({ home: homedir() });
+    process.stdout.write(
+      status.installed
+        ? `  ${theme.ok("✓")} ${theme.bold("Status line")} ${theme.dim("connection state shows at the bottom of Claude Code")}\n`
+        : `  ${theme.dim("–")} ${theme.bold("Status line")} ${theme.dim(`skipped (${status.reason})`)}\n`
     );
   }
 
@@ -294,14 +335,34 @@ if (args.install) {
 
 if (args.json) {
   process.stdout.write(
-    `${JSON.stringify({ apiKey: created.rawKey, maskedKey: created.maskedKey, projectUuid, mcpAccess: args.access }, undefined, 2)}\n`
+    `${JSON.stringify(
+      {
+        apiKey: created.rawKey,
+        maskedKey: created.maskedKey,
+        scope: keyScope,
+        projectUuid: projectUuid ?? null,
+        mcpAccess: args.access,
+      },
+      undefined,
+      2
+    )}\n`
   );
 } else if (!args.install) {
+  const access = args.access === "read" ? "read-only" : "read + write";
   process.stdout.write(
-    `\n  ${theme.ok("✓")} ${theme.dim(`Created a ${args.access === "read" ? "read-only" : "read + write"} key.`)}\n\n`
+    `\n  ${theme.ok("✓")} ${theme.dim(
+      keyScope === "user"
+        ? `Created a user-level ${access} key. It works on every project your account can access.`
+        : `Created a ${access} key.`
+    )}\n\n`
   );
   process.stdout.write(`  export JITERA_API_KEY=${theme.bold(created.rawKey)}\n\n`);
   process.stdout.write(
     `  ${theme.dim("Then run")} ${theme.accent("npx @jitera/connect")} ${theme.dim("to configure your assistants.")}\n`
   );
+  if (keyScope === "user") {
+    process.stdout.write(
+      `  ${theme.dim("Bind each repo to its project with")} ${theme.accent("npx @jitera/connect init")}\n`
+    );
+  }
 }

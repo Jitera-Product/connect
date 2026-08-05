@@ -219,20 +219,15 @@ export function toErrorMessages(errors: MutationErrors): string[] {
   return single ? [single] : [];
 }
 
-export async function createApiKey(
-  options: { readonly projectUuid: string; readonly name: string; readonly mcpAccess: McpAccess },
+async function runCreateApiKey(
+  params: Record<string, unknown>,
+  noKeyReason: string,
   transport: GraphqlTransport
 ): Promise<CreatedApiKey> {
   const data = await query<CreateApiKeyPayload>(
     "ConnectCreateApiKey",
     CREATE_KEY_DOCUMENT,
-    {
-      params: {
-        projectUuid: options.projectUuid,
-        name: options.name,
-        mcpAccess: options.mcpAccess,
-      },
-    },
+    { params },
     transport
   );
 
@@ -245,10 +240,39 @@ export async function createApiKey(
     throw new GraphqlError("ConnectCreateApiKey", ["the deployment reported the request unsuccessful"]);
   }
   if (!result.rawKey) {
-    throw new GraphqlError("ConnectCreateApiKey", [
-      "no key was returned. The account may lack permission to manage api keys for this project.",
-    ]);
+    throw new GraphqlError("ConnectCreateApiKey", [noKeyReason]);
   }
 
   return { rawKey: result.rawKey, maskedKey: result.apiKey?.maskedKey ?? "" };
+}
+
+export async function createApiKey(
+  options: { readonly projectUuid: string; readonly name: string; readonly mcpAccess: McpAccess },
+  transport: GraphqlTransport
+): Promise<CreatedApiKey> {
+  return runCreateApiKey(
+    { projectUuid: options.projectUuid, name: options.name, mcpAccess: options.mcpAccess },
+    "no key was returned. The account may lack permission to manage api keys for this project.",
+    transport
+  );
+}
+
+// A user-level key: no project in the params. Deployments that predate user
+// keys reject this, and the caller falls back to the project flow.
+export async function createUserApiKey(
+  options: { readonly name: string; readonly mcpAccess: McpAccess },
+  transport: GraphqlTransport
+): Promise<CreatedApiKey> {
+  return runCreateApiKey(
+    { name: options.name, mcpAccess: options.mcpAccess },
+    "no key was returned. This deployment may not support user-level keys yet.",
+    transport
+  );
+}
+
+export function isAuthenticationFailure(error: unknown): boolean {
+  return (
+    error instanceof GraphqlError &&
+    error.errors.some((message) => /access token was rejected/i.test(message))
+  );
 }

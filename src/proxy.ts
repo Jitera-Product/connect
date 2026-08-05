@@ -3,6 +3,7 @@ import { createInterface } from "node:readline";
 import { discoverDeployment } from "./discovery.ts";
 import { DEFAULT_BRAND } from "./install/render.ts";
 import { McpCallError, postRpc, type JsonRpcRequest } from "./mcp-client.ts";
+import { readProjectMarker } from "./project-marker.ts";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -16,6 +17,18 @@ export interface ProxyConfig {
   readonly url: string;
   readonly apiKey: string;
   readonly instructions?: string | undefined;
+  readonly projectUuid?: string | undefined;
+}
+
+// The repository's committed .jitera.json binds the workspace to a project;
+// an explicit JITERA_PROJECT env always wins.
+export function resolveProjectUuid(
+  env: NodeJS.ProcessEnv,
+  cwd: string = process.cwd()
+): string | undefined {
+  const override = (env["JITERA_PROJECT"] ?? "").trim();
+  if (override) return override;
+  return readProjectMarker(cwd)?.project;
 }
 
 function isNotification(request: JsonRpcRequest): boolean {
@@ -34,7 +47,7 @@ function injectInstructions(response: unknown, instructions: string): void {
 }
 
 export async function runProxy(
-  { url, apiKey, instructions }: ProxyConfig,
+  { url, apiKey, instructions, projectUuid }: ProxyConfig,
   { input, output, log }: ProxyStreams
 ): Promise<void> {
   const lines = createInterface({ input, crlfDelay: Infinity });
@@ -53,7 +66,7 @@ export async function runProxy(
 
     let response;
     try {
-      response = await postRpc(request, { url, apiKey, timeoutMs: REQUEST_TIMEOUT_MS });
+      response = await postRpc(request, { url, apiKey, projectUuid, timeoutMs: REQUEST_TIMEOUT_MS });
     } catch (error) {
       const message = error instanceof McpCallError ? error.message : String(error);
       log.write(`jitera-connect proxy: ${message}\n`);

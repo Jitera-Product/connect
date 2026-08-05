@@ -43,6 +43,9 @@ export const codex: Adapter = {
       context.apiKey
         ? `bearer_token = "${context.apiKey}"`
         : `bearer_token_env_var = "${API_KEY_ENV}"`,
+      ...(context.projectUuid
+        ? [`http_headers = { "X-Jitera-Project" = "${context.projectUuid}" }`]
+        : []),
     ].join("\n");
     const after = ensureRootKey(upsertTable(before, SERVER_TABLE, body), RMCP_FLAG, "true");
     if (!context.dryRun) write(path, after);

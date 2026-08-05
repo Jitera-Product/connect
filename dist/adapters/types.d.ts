@@ -6,6 +6,7 @@ export interface AdapterContext {
     readonly cwd: string;
     readonly mcpUrl?: string;
     readonly apiKey?: string;
+    readonly projectUuid?: string | undefined;
     readonly dryRun?: boolean;
 }
 export interface AdapterResult {

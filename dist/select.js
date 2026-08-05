@@ -1,8 +1,41 @@
+import { createInterface } from "node:readline/promises";
 export class SelectCancelledError extends Error {
     name = "SelectCancelledError";
     constructor() {
         super("selection cancelled");
     }
+}
+export class InvalidChoiceError extends Error {
+    name = "InvalidChoiceError";
+    answer;
+    constructor(answer) {
+        super(`"${answer}" is not one of the listed options.`);
+        this.answer = answer;
+    }
+}
+// Arrow-key selection on a terminal, a numbered prompt everywhere else.
+export async function chooseFrom({ items, prompt, label, theme, }) {
+    if (process.stdin.isTTY && process.stdout.isTTY) {
+        return interactiveSelect({
+            items,
+            prompt,
+            label,
+            theme,
+            input: process.stdin,
+            output: process.stdout,
+        });
+    }
+    process.stdout.write(`\n  ${theme.bold(prompt)}\n\n`);
+    items.forEach((item, index) => {
+        process.stdout.write(`    ${theme.accent(String(index + 1).padStart(2))}  ${label(item)}\n`);
+    });
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const answer = (await rl.question(`\n  ${theme.dim(`Number [1-${items.length}]`)} `)).trim();
+    rl.close();
+    const picked = items[Number(answer) - 1];
+    if (!picked)
+        throw new InvalidChoiceError(answer);
+    return picked;
 }
 function parseKey(sequence, count) {
     if (sequence === "" || sequence === "")

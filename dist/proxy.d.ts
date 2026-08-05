@@ -7,8 +7,10 @@ export interface ProxyConfig {
     readonly url: string;
     readonly apiKey: string;
     readonly instructions?: string | undefined;
+    readonly projectUuid?: string | undefined;
 }
-export declare function runProxy({ url, apiKey, instructions }: ProxyConfig, { input, output, log }: ProxyStreams): Promise<void>;
+export declare function resolveProjectUuid(env: NodeJS.ProcessEnv, cwd?: string): string | undefined;
+export declare function runProxy({ url, apiKey, instructions, projectUuid }: ProxyConfig, { input, output, log }: ProxyStreams): Promise<void>;
 export interface ProxyEnvironment extends ProxyConfig {
     readonly brand: string;
 }
