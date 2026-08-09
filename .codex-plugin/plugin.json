@@ -1,6 +1,6 @@
 {
   "name": "jitera-connect",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Connect this workspace to a Jitera project: read documentation and source, and keep project memory up to date.",
   "skills": "./skills/"
 }

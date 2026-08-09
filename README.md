@@ -1,28 +1,22 @@
-# how to install
+# jitera connect
 
-## one command
+connects claude code, cursor, and codex to a jitera project: documentation,
+source, and shared project memory over mcp.
+
+## install
 
 ```
 npx @jitera/connect login --install
 ```
 
-Signs you in through your browser, creates an api key, and configures every
-assistant it finds. Detected independently: claude code, cursor, codex.
+signs you in through the browser, creates a user-level api key, and configures
+every assistant it finds. one key covers every project your account can reach,
+so you run this once per machine and never again per project.
 
-For a pilot or staging environment:
+for a pilot or staging environment:
 
 ```
 npx @jitera/connect login --env=studio-05 --install
-```
-
-## choosing what to connect
-
-`login` asks which organisation, then which project. It only offers projects you
-can create an api key on. Skip either prompt:
-
-```
-npx @jitera/connect login --org=<slug>
-npx @jitera/connect login --project=<uuid>
 ```
 
 ## claude code
@@ -44,63 +38,87 @@ codex plugin marketplace add jitera-product/connect
 npx @jitera/connect
 ```
 
-## shared instructions, committed to the repo
+## binding a repo to a project
 
 ```
 npx @jitera/connect init
 ```
 
-Optional. Writes three committable files at the root of the current git
-repository: an AGENTS.md block for teammates whose assistants read repository
-instructions natively rather than through the plugin, a CLAUDE.md that imports
-it, and a .jitera.json recording which deployment this repository belongs to
-(`--env=`, and optionally `--project=<uuid>`). Commit all three.
+run this once per repo, from inside the repo, and commit the three files it
+writes. `.jitera.json` records the deployment and project the repo belongs to.
+AGENTS.md carries the same guidance for assistants that read it natively, and
+CLAUDE.md imports it, because claude code reads CLAUDE.md and not AGENTS.md.
 
-The .jitera.json marker is what teammates' sessions read: a teammate who has
-not connected yet is told the exact login command for the right environment,
-and a teammate whose plugin points at a different environment gets a mismatch
-warning instead of silently reading the wrong project.
+init reuses the login you already did to list your projects and asks which one
+this repo is. pass `--project=<uuid>` to skip the question, or `--dry-run` to
+see what it would write.
 
-Refuses to run outside a git repository, because instructions written above a
-repo are invisible to assistants that read AGENTS.md and leak into every
-project below them. Connected sessions do not need AGENTS.md: the mcp server
-delivers the same guidance itself.
+it refuses to run outside a git repository. instructions written above a repo
+are invisible to anything that reads AGENTS.md from the repo root, and a
+CLAUDE.md above a repo leaks into every project underneath it.
 
 ## what applies where
 
-The login configuration is global: one api key and one environment per user,
-per machine, stored by `login --install`. Every repo you open uses it — the
-plugin, skills, and hooks all work without any per-repo files, so `init` is
-optional everywhere.
+the api key is global: one per user, per machine, stored by `login --install`.
+every repo you open uses it, so init is optional and nothing breaks without it.
 
-`.jitera.json` never configures anything. It only declares what the repo
-expects, so a session can cross-check the global setting: a teammate who has
-not connected yet is told the exact login command for the right environment,
-and a mismatched environment gets a warning instead of silently reading the
-wrong project.
+`.jitera.json` configures nothing by itself. it declares what the repo expects,
+and sessions check the two against each other. a teammate who has not signed in
+yet gets the exact login command for the right environment. a teammate pointed
+at a different environment gets a warning instead of quietly reading the wrong
+project.
 
-With a user-level key, `.jitera.json` is also what selects the project: the
-proxy and hooks read it from the repository and send it with every request, so
-different repos on one machine talk to different projects with a single key.
-On older deployments the key itself is bound to one project; there the marker
-only makes a mismatch visible.
+with a user-level key it does one more thing: it picks the project. the proxy
+and the hooks read it and send it as an `X-Jitera-Project` header, so several
+repos on one machine can talk to different projects through a single key. older
+deployments bind the key itself to one project, and there the marker only makes
+a mismatch visible.
+
+## seeing your keys
+
+in the jitera app your own keys live under your avatar, then account, then api
+keys. you can create and revoke them from there. project keys sit in the
+project's settings, agent keys under the agent, and organisation keys under
+settings, then organisation.
+
+## the api key
+
+login creates a user-level key when the deployment supports it. older
+deployments issue project-scoped keys, so login falls back to asking which
+project and tells you when that happens.
+
+`login --install` stores the key for you, so there is nothing to export:
+
+- claude code: your os keychain
+- cursor and codex: their own config in your home directory, outside any repo
+
+it also keeps a private session at `~/.config/jitera-connect/session.json`,
+mode 0600, so init can list your projects without another trip through the
+browser.
+
+installing without `login` leaves cursor and codex reading `JITERA_API_KEY`
+from the environment:
+
+```
+export JITERA_API_KEY=<your api key>
+```
 
 ## status line
 
-`login --install` also puts the connection in Claude Code's status line:
+`login --install` also puts the connection in claude code's status line:
 
-    ● jitera · studio-05 · recall 1.2k/0.4s
+```
+● jitera · studio-05 · recall 1.2k/0.4s
+```
 
-A filled green dot means the session is configured; hollow means not connected;
-yellow flags a failed recall or a repo whose .jitera.json wants a different
-environment. The renderer is pure-local — it reads state the hooks already
-wrote, never the network — and it resolves the current plugin version at run
-time, so plugin updates never orphan it.
+green means the session is configured, hollow means not connected, and yellow
+means a failed recall or a repo asking for a different environment. it reads
+state the hooks already wrote, so it never touches the network, and it resolves
+the installed plugin version when it runs, so an update does not orphan it.
 
-Claude Code has a single status line slot. If you already have one configured,
-it is left alone and the install says so; remove yours and rerun login, or wire
-it manually in settings.json with `statusLine` pointing at the plugin's
-`dist/bin/statusline.js`.
+claude code has one status line slot. if something else already owns it, login
+leaves it alone and says so. remove yours and run login again, or point
+`statusLine` at the plugin's `dist/bin/statusline.js` yourself.
 
 ## pilot and staging environments
 
@@ -123,30 +141,11 @@ npx @jitera/connect --env=studio-05
 npx @jitera/connect --env=studio-stage
 ```
 
-## the api key
-
-`login` creates a **user-level** key when the deployment supports it: one key,
-valid on every project your account can access. Older deployments issue
-project-scoped keys instead, and login falls back to choosing a project — you
-will see a notice when that happens.
-
-With a user-level key the project comes from the repository, not the key: `init`
-records it in the committed `.jitera.json`, and every request carries it as an
-`X-Jitera-Project` header. A teammate with access who clones the repo needs only
-their own one-time `login --install` — no per-project setup.
-
-`login --install` stores the key for you. nothing to export.
-
-- claude code: your os keychain
-- cursor and codex: their own config in your home directory, outside any repo
-
-login also keeps a private session (`~/.config/jitera-connect/session.json`,
-`0600`) so `init` can list your projects later without another browser
-round-trip.
-
-installing without `login` leaves cursor and codex reading `JITERA_API_KEY` from
-the environment instead:
+## other flags
 
 ```
-export JITERA_API_KEY=<your api key>
+npx @jitera/connect --print         print the resolved endpoints and exit
+npx @jitera/connect --dry-run       report what would change, write nothing
+npx @jitera/connect --uninstall     remove the jitera server
+npx @jitera/connect --skip-skills   write mcp config only
 ```
