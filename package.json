@@ -20,8 +20,8 @@
     "node": ">=20"
   },
   "bin": {
-    "connect": "./dist/bin/connect.js",
-    "jitera-connect": "./dist/bin/connect.js"
+    "connect": "dist/bin/connect.js",
+    "jitera-connect": "dist/bin/connect.js"
   },
   "files": [
     "dist/",
