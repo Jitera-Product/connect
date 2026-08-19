@@ -12,7 +12,7 @@ import {
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const text = readFileSync(join(ROOT, "content", "instructions.md"), "utf8");
 
-const TOOL_NAMES = ["recall_jitera_memory", "remember_jitera_memory"];
+const TOOL_NAMES = ["recall_jitera_memory", "remember_jitera_memory", "gather_jitera_context"];
 
 const flowed = text.replace(/\s+/g, " ");
 
@@ -33,6 +33,7 @@ test("instructions never hardcode the brand name, ignoring tool identifiers", ()
 
 test("instructions name the tools the model must call", () => {
   for (const tool of [
+    "gather_jitera_context",
     "recall_jitera_memory",
     "remember_jitera_memory",
     "resource_search",

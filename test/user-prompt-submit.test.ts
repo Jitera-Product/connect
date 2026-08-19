@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { claimOnce, markerPath } from "../src/session-marker.ts";
-import { isolatedTmpdir, runNode, toolTextServer } from "./helpers.ts";
+import { isolatedTmpdir, runNode, stubServer, toolTextServer } from "./helpers.ts";
 
 const HOOK = "dist/hooks/user-prompt-submit.js";
 
@@ -49,12 +49,91 @@ test("the first prompt of a session injects real memory", async () => {
   await server.close();
 });
 
-test("the recall asks for everything, not a guessed query", async () => {
+function toolCall(server: { requests: readonly Record<string, unknown>[] }, index = 0) {
+  return server.requests[index]?.["params"] as {
+    name: string;
+    arguments: Record<string, unknown>;
+  };
+}
+
+test("the gather call carries the prompt as the task", async () => {
   const server = await toolTextServer("memory");
-  await runNode(HOOK, { input: { session_id: "s-args" }, env: env(server.url) });
-  const params = server.requests[0]?.["params"] as { name: string; arguments: unknown };
-  assert.equal(params.name, "recall_jitera_memory");
-  assert.deepEqual(params.arguments, {});
+  await runNode(HOOK, {
+    input: { session_id: "s-args", prompt: "how do refunds work" },
+    env: env(server.url),
+  });
+  const params = toolCall(server);
+  assert.equal(params.name, "gather_jitera_context");
+  assert.equal(params.arguments["task"], "how do refunds work");
+  assert.equal(params.arguments["budget"], 6000);
+  await server.close();
+});
+
+test("the prompt_text field is read too, since which one arrives was never exercised", async () => {
+  const server = await toolTextServer("memory");
+  await runNode(HOOK, {
+    input: { session_id: "s-legacy-field", prompt_text: "how do refunds work" },
+    env: env(server.url),
+  });
+  assert.equal(toolCall(server).arguments["task"], "how do refunds work");
+  await server.close();
+});
+
+test("a deployment without the composite tool falls back to a plain recall", async () => {
+  const server = await stubServer((body, res) => {
+    const params = body["params"] as { name: string };
+    res.writeHead(200, { "content-type": "application/json" });
+    if (params.name === "gather_jitera_context") {
+      res.end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: body["id"],
+          error: { code: -32602, message: "Unknown tool: gather_jitera_context" },
+        })
+      );
+      return;
+    }
+    res.end(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: body["id"],
+        result: { content: [{ type: "text", text: "older deployment memory" }], isError: false },
+      })
+    );
+  });
+
+  const { stdout } = await runNode(HOOK, {
+    input: { session_id: "s-fallback", prompt: "refunds" },
+    env: env(server.url),
+  });
+
+  assert.equal(toolCall(server, 0).name, "gather_jitera_context");
+  assert.equal(toolCall(server, 1).name, "recall_jitera_memory");
+  // The blind call is deliberate on old deployments: they have no widening
+  // ladder, so a query can return less than no query at all.
+  assert.deepEqual(toolCall(server, 1).arguments, {});
+  assert.match(
+    (JSON.parse(stdout) as HookOutput).hookSpecificOutput.additionalContext,
+    /older deployment memory/
+  );
+  await server.close();
+});
+
+test("both tools failing degrades silently rather than breaking the prompt", async () => {
+  const server = await stubServer((body, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({ jsonrpc: "2.0", id: body["id"], error: { message: "server is down" } })
+    );
+  });
+
+  const { stdout, code } = await runNode(HOOK, {
+    input: { session_id: "s-both-fail", prompt: "refunds" },
+    env: env(server.url),
+  });
+
+  assert.equal(stdout.trim(), "");
+  assert.equal(code, 0);
   await server.close();
 });
 

@@ -17,6 +17,19 @@ Three virtual domains:
 | `sources/` | Project source code | no |
 | `uploads/` | Uploaded files | no |
 
+## Start with the whole picture
+
+```
+gather_jitera_context(task="how do refunds get issued", budget=6000)
+```
+
+Recalls project memory and searches documentation and source in one call,
+running the widening fallbacks itself: memory falls back to every stored entity
+when keywords match nothing, and search falls back to fuzzy matching when exact
+matching is dry. It also lists the project's agents, so a recalled fact can be
+attributed. Use it before planning or answering, then narrow with the tools
+below.
+
 ## Searching
 
 ```
@@ -27,6 +40,10 @@ resource_search(pattern="documents/**/*.md", content="refund", limit=30, offset=
   domain prefix to search every domain: `resource_search(pattern="**/checkout*.*")`
 - `content` — a grep-style match inside files, supporting boolean expressions:
   `content="(api OR rest) AND controller"`
+- `mode` — how `content` is matched. `default` is a case-insensitive substring;
+  `regex` treats `content` as a case-insensitive regular expression; `full-text`
+  matches fuzzily by trigram similarity, for when you are unsure of the exact
+  wording. `pattern` is always a glob, whatever the mode
 - Results are grouped by domain. Open a match with `resource_read`
 
 Search before reading. Do not guess paths.

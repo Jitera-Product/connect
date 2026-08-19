@@ -9,6 +9,7 @@ export interface SessionStartInput extends HookInputBase {
     readonly source?: "startup" | "resume" | "clear" | "compact" | "fork";
 }
 export interface UserPromptSubmitInput extends HookInputBase {
+    readonly prompt?: string;
     readonly prompt_text?: string;
 }
 export interface StopInput extends HookInputBase {
@@ -18,5 +19,6 @@ export interface StopInput extends HookInputBase {
 }
 export type HookInput = SessionStartInput & UserPromptSubmitInput & StopInput;
 export declare function readHookInput(fd?: number): HookInput;
+export declare function promptText(input: UserPromptSubmitInput): string;
 export declare function emitContext(event: HookEventName, additionalContext: string): void;
 //# sourceMappingURL=hook-io.d.ts.map

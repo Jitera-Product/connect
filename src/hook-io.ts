@@ -19,6 +19,10 @@ export interface SessionStartInput extends HookInputBase {
 }
 
 export interface UserPromptSubmitInput extends HookInputBase {
+  // Claude Code sends `prompt`; `prompt_text` is accepted because this type
+  // declared it first and nothing ever read it, so which one arrives had never
+  // been exercised. Reading both costs nothing and cannot regress.
+  readonly prompt?: string;
   readonly prompt_text?: string;
 }
 
@@ -36,6 +40,10 @@ export function readHookInput(fd: number = 0): HookInput {
   } catch {
     return {};
   }
+}
+
+export function promptText(input: UserPromptSubmitInput): string {
+  return (input.prompt ?? input.prompt_text ?? "").trim();
 }
 
 export function emitContext(event: HookEventName, additionalContext: string): void {

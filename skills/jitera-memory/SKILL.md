@@ -31,16 +31,28 @@ failed.
 
 ### When the first recall comes back thin
 
-`recall_jitera_memory` filters entities by keywords extracted from `query`. Work
-down this ladder, stopping as soon as you have what you need:
+`gather_jitera_context` runs this ladder for you and says when it widened, so
+prefer it for a first look. Reach for `recall_jitera_memory` directly when you
+want memory alone, and work down the ladder yourself:
 
 1. `recall_jitera_memory(query="<specific terms from the task>")`
 2. `recall_jitera_memory(query="<the subsystem or domain>")`
 3. `recall_jitera_memory()` with no query — returns every stored entity
 
+Keywords are combined with OR, so *more* terms match more entities. There is no
+narrower rung below step 1 — when it comes back empty, widen rather than
+refine.
+
 Do not conclude that memory is empty until step 3 returns nothing. Results
 containing `[[id]]` references mean related entities exist, and a broader query
 will surface them.
+
+### Whose memory you are reading
+
+Each agent in a project writes to its own partition. A project-level key reads
+across all of them, so a recalled fact may have been written by any agent;
+`list_jitera_agents` names them. A key pinned to one agent sees only that
+agent's own partition.
 
 ## Remember when knowledge is created
 
