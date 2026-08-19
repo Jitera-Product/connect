@@ -54,4 +54,14 @@ if (marker?.environment) {
   }
 }
 
+// `init` writes a marker with no project when nobody was signed in to pick one.
+// A project-scoped key still works, but a user-level key cannot infer a project
+// and every call quietly fails, so name the gap rather than let it dead-end.
+if (apiKey && marker && !marker.project) {
+  directive +=
+    `\n\nNote: this repository's .jitera.json records no project. A user-level ` +
+    `API key cannot infer one, so project context may not load. Suggest finishing ` +
+    `the binding with:\n\n    npx @jitera/connect init --project=<uuid>`;
+}
+
 emitContext("SessionStart", directive);

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { isolatedTmpdir, runNode } from "./helpers.ts";
@@ -76,7 +76,10 @@ test("session start survives empty stdin", async () => {
 });
 
 test("the configured directive stays brand-neutral", async () => {
-  const cwd = markedRepo({ environment: "studio" });
+  // A fully bound repo, so no advisory note is appended: the notes carry the
+  // `npx @jitera/connect ...` command by necessity, and this guards the
+  // directive text itself.
+  const cwd = markedRepo({ environment: "studio", project: "proj-1" });
   let ctx = await context(SESSION_START, { source: "startup", cwd }, CONFIGURED);
   for (const tool of [
     "gather_jitera_context",
@@ -156,6 +159,33 @@ test("a malformed marker never breaks the hook", async () => {
   // Unreadable is treated as unbound rather than acted on, so the session is
   // told how to bind the repository instead of reading a guessed project.
   assert.match(ctx, /npx @jitera\/connect init/);
+});
+
+test("a marker with no project says so, because a user-level key cannot infer one", async () => {
+  const cwd = markedRepo({ environment: "studio" });
+  const ctx = await context(SESSION_START, { source: "startup", cwd }, CONFIGURED);
+  assert.match(ctx, /records no project/);
+  assert.match(ctx, /init --project=<uuid>/);
+});
+
+test("a marker naming a project adds no such note", async () => {
+  const cwd = markedRepo({ environment: "studio", project: "proj-1" });
+  const ctx = await context(SESSION_START, { source: "startup", cwd }, CONFIGURED);
+  assert.ok(!/records no project/.test(ctx));
+});
+
+test("session start directives carry no template tokens", () => {
+  // session-start.ts emits these files verbatim; only the proxy renders. A
+  // known token like {{BRAND}} passes validate.ts and still reaches the model.
+  const root = join(import.meta.dirname, "..", "content");
+  for (const file of [
+    "session-start.md",
+    "session-start-unconfigured.md",
+    "session-start-unbound.md",
+  ]) {
+    const text = readFileSync(join(root, file), "utf8");
+    assert.ok(!text.includes("{{"), `${file} is emitted unrendered, so it cannot hold tokens`);
+  }
 });
 
 test("a connected session in an unbound repo asks the user to run init", async () => {

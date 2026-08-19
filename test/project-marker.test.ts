@@ -76,3 +76,52 @@ test("read ignores non-string fields", () => {
   writeFileSync(join(root, MARKER_FILENAME), JSON.stringify({ environment: 42 }), "utf8");
   assert.equal(readProjectMarker(root)?.environment, undefined);
 });
+
+test("a marker of null does not throw on the way out", () => {
+  // `null` parses cleanly and then throws on property access. A hook must
+  // never break a session over a file it merely read.
+  const dir = isolatedTmpdir();
+  writeFileSync(join(dir, ".jitera.json"), "null", "utf8");
+  assert.equal(readProjectMarker(dir), undefined);
+});
+
+test("a marker that is not an object reads as unbound", () => {
+  for (const body of ['"a string"', "[]", "123", "true"]) {
+    const dir = isolatedTmpdir();
+    writeFileSync(join(dir, ".jitera.json"), body, "utf8");
+    assert.equal(readProjectMarker(dir), undefined, `${body} is not a marker`);
+  }
+});
+
+test("the search stops at the repository root", () => {
+  // A stray marker in a parent directory must not bind unrelated repos.
+  const parent = isolatedTmpdir();
+  writeFileSync(join(parent, ".jitera.json"), JSON.stringify({ project: "parent" }), "utf8");
+  const repo = join(parent, "repo");
+  mkdirSync(join(repo, ".git"), { recursive: true });
+  const nested = join(repo, "src", "deep");
+  mkdirSync(nested, { recursive: true });
+
+  assert.equal(readProjectMarker(nested), undefined);
+});
+
+test("a repository's own marker still wins from a nested directory", () => {
+  const parent = isolatedTmpdir();
+  const repo = join(parent, "repo");
+  mkdirSync(join(repo, ".git"), { recursive: true });
+  writeFileSync(join(repo, ".jitera.json"), JSON.stringify({ project: "own" }), "utf8");
+  const nested = join(repo, "src", "deep");
+  mkdirSync(nested, { recursive: true });
+
+  assert.equal(readProjectMarker(nested)?.project, "own");
+});
+
+test("directories that are not repositories still inherit from above", () => {
+  // A monorepo package without its own .git keeps reading the root marker.
+  const root = isolatedTmpdir();
+  writeFileSync(join(root, ".jitera.json"), JSON.stringify({ project: "monorepo" }), "utf8");
+  const pkg = join(root, "packages", "web");
+  mkdirSync(pkg, { recursive: true });
+
+  assert.equal(readProjectMarker(pkg)?.project, "monorepo");
+});

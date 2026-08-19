@@ -21,14 +21,22 @@ export function readProjectMarker(startDir: string): FoundProjectMarker | undefi
   for (;;) {
     const path = join(dir, MARKER_FILENAME);
     if (existsSync(path)) {
-      let parsed: Record<string, unknown>;
+      let parsed: unknown;
       try {
-        parsed = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+        parsed = JSON.parse(readFileSync(path, "utf8"));
       } catch {
         return undefined;
       }
-      const environment = parsed["environment"];
-      const project = parsed["project"];
+
+      // `null` parses cleanly and then throws on property access, and a array
+      // or a bare scalar is not a marker either. Malformed reads as unbound,
+      // the same as unparseable, because hooks must never break a session.
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return undefined;
+      }
+      const fields = parsed as Record<string, unknown>;
+      const environment = fields["environment"];
+      const project = fields["project"];
       return {
         path,
         ...(typeof environment === "string" && SAFE_ENVIRONMENT.test(environment)
@@ -37,6 +45,11 @@ export function readProjectMarker(startDir: string): FoundProjectMarker | undefi
         ...(typeof project === "string" ? { project } : {}),
       };
     }
+    // Never look past the repository root. `init` writes the marker there, so
+    // a stray .jitera.json in a parent directory (or $HOME) would otherwise
+    // bind every repository beneath it to a project nobody chose for them.
+    if (existsSync(join(dir, ".git"))) return undefined;
+
     const parent = dirname(dir);
     if (parent === dir) return undefined;
     dir = parent;

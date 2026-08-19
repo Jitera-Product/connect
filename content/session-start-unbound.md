@@ -1,6 +1,6 @@
-An API key is configured for {{BRAND}}, but this repository is not bound to a project.
+An API key is configured, but this repository is not bound to a project.
 No project context is loaded and the MCP tools have nothing to read.
-Do not call them in this session.
+Do not call them until this repository is bound.
 
 If the user asks about project context, documentation, or shared memory, or
 wants this repository bound to one, tell them to run this at the repository root:

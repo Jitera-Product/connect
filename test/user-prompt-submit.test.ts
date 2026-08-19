@@ -92,6 +92,32 @@ test("the prompt_text field is read too, since which one arrives was never exerc
   await server.close();
 });
 
+test("no prompt text recalls instead of gathering for an empty task", async () => {
+  const server = await toolTextServer("memory");
+  await runNode(HOOK, {
+    input: { session_id: "s-no-prompt", cwd: BOUND },
+    env: env(server.url),
+  });
+  await server.close();
+
+  // Gathering with an empty task makes the server ask for one, and that answer
+  // would land in the session as though it were project context.
+  const params = toolCall(server);
+  assert.equal(params.name, "recall_jitera_memory");
+  assert.deepEqual(params.arguments, {});
+  assert.equal(server.requests.length, 1, "no pointless second call");
+});
+
+test("a whitespace-only prompt counts as no prompt", async () => {
+  const server = await toolTextServer("memory");
+  await runNode(HOOK, {
+    input: { session_id: "s-blank-prompt", cwd: BOUND, prompt: "   \n  " },
+    env: env(server.url),
+  });
+  await server.close();
+  assert.equal(toolCall(server).name, "recall_jitera_memory");
+});
+
 test("a deployment without the composite tool falls back to a plain recall", async () => {
   const server = await stubServer((body, res) => {
     const params = body["params"] as { name: string };
@@ -130,6 +156,43 @@ test("a deployment without the composite tool falls back to a plain recall", asy
     /older deployment memory/
   );
   await server.close();
+});
+
+test("a failure that is not a missing tool does not pay for a second call", async () => {
+  const server = await stubServer((body, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: body["id"],
+        error: { code: -32000, message: "upstream exploded" },
+      })
+    );
+  });
+
+  const { stdout, code } = await runNode(HOOK, {
+    input: { session_id: "s-hard-fail", cwd: BOUND, prompt: "refunds" },
+    env: env(server.url),
+  });
+  await server.close();
+
+  // Retrying the old tool only helps when the new one is absent. On a timeout
+  // or a server error it just stacks another wait onto a blocked prompt.
+  assert.equal(server.requests.length, 1, "must not fall back on a generic failure");
+  assert.equal(stdout.trim(), "");
+  assert.equal(code, 0);
+});
+
+test("an oversized prompt is capped before it is sent", async () => {
+  const server = await toolTextServer("memory");
+  await runNode(HOOK, {
+    input: { session_id: "s-huge", cwd: BOUND, prompt: "x".repeat(50000) },
+    env: env(server.url),
+  });
+  await server.close();
+
+  const task = toolCall(server).arguments["task"] as string;
+  assert.equal(task.length, 2000, "a pasted log adds upload, not signal");
 });
 
 test("both tools failing degrades silently rather than breaking the prompt", async () => {
