@@ -13,5 +13,10 @@ catch {
 const dir = input.workspace?.project_dir ?? input.workspace?.current_dir ?? input.cwd;
 const marker = dir ? readProjectMarker(dir) : undefined;
 const status = readSessionStatus(input.session_id);
-process.stdout.write(`${renderStatusLine({ status, markerEnvironment: marker?.environment })}\n`);
+process.stdout.write(`${renderStatusLine({
+    status,
+    markerEnvironment: marker?.environment,
+    // No directory to inspect is not the same as an unbound repository.
+    bound: dir ? marker !== undefined : undefined,
+})}\n`);
 //# sourceMappingURL=statusline.js.map

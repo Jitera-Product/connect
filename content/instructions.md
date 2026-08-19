@@ -6,6 +6,8 @@ Before answering a question about this project, and before planning or
 implementing anything, call `gather_jitera_context` with the task in the user's
 own words. It recalls memory and searches documentation and source in one pass,
 across every agent in the project. An empty result is normal, not an error.
+Call it again whenever the work reaches something you have not gathered context
+for; it is not a once-per-session lookup.
 
 Before writing a spec, design, or plan, search `documents/` with
 `resource_search` and read any match with `resource_read`. Update the existing

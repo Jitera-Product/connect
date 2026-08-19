@@ -4,16 +4,22 @@
 This repository is connected to a {{BRAND}} project. Documentation, source, and a
 shared project memory are available through the `jitera` MCP server.
 
-Before planning or implementing anything, call `recall_jitera_memory`. An empty
-result is normal and is not an error.
+Before planning or implementing anything, and before answering a question about
+this project, call `gather_jitera_context` with the task in your own words. It
+recalls project memory and searches documentation and source in one pass. An
+empty result is normal and is not an error.
+
+Keep using it as the work moves. It is not a once-per-session lookup: call it
+again whenever you reach an area you have not gathered context for yet.
 
 Before writing a spec or design, search `documents/` with `resource_search` and
 read any match with `resource_read`. Update the existing document rather than
 creating a second one.
 
 When a decision is made, a constraint is discovered, or you are corrected,
-persist it with `remember_jitera_memory`. Recall the entity first and re-send its
-full attribute list, because entities are keyed on name plus type.
+persist it with `remember_jitera_memory`. Recall the entity first with
+`recall_jitera_memory` and re-send its full attribute list, because entities are
+keyed on name plus type.
 
 `documents/` is readable and writable. `sources/` and `uploads/` are read-only.
 

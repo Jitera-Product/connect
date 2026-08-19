@@ -16,7 +16,17 @@ const input = readHookInput();
 // teach the model to call tools that are not there.
 const apiKey = (process.env["CLAUDE_PLUGIN_OPTION_JITERA_API_KEY"] ?? "").trim();
 const configuredEnvironment = (process.env["CLAUDE_PLUGIN_OPTION_ENVIRONMENT"] ?? "").trim();
-const file = apiKey ? "session-start.md" : "session-start-unconfigured.md";
+// A committed .jitera.json binds the repository to a deployment and project.
+// Read it first: which directive applies depends on whether this repo is bound.
+const marker = readProjectMarker(input.cwd ?? process.cwd());
+
+// Three states, because "connected" and "bound to a project" are different
+// things: without a binding the tools would have no project to read.
+const file = !apiKey
+  ? "session-start-unconfigured.md"
+  : marker
+    ? "session-start.md"
+    : "session-start-unbound.md";
 
 let directive: string;
 try {
@@ -24,11 +34,6 @@ try {
 } catch {
   process.exit(0);
 }
-
-// A committed .jitera.json binds the repository to a deployment, so teammates
-// who have not connected yet get the exact command, and a mismatched plugin
-// configuration is called out instead of silently reading the wrong project.
-const marker = readProjectMarker(input.cwd ?? process.cwd());
 
 writeSessionStatus(input.session_id, {
   configured: Boolean(apiKey),

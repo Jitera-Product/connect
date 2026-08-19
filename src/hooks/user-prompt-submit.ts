@@ -16,10 +16,20 @@ const RECALL_TIMEOUT_MS = 8000;
 
 const input = readHookInput();
 
-if (!claimOnce(input.session_id, "recall")) process.exit(0);
-
 const apiKey = process.env["CLAUDE_PLUGIN_OPTION_JITERA_API_KEY"] ?? "";
 if (!apiKey) process.exit(0);
+
+// Without .jitera.json this repository is not bound to a project, so there is
+// no project whose context could be gathered. Bail before discovery rather
+// than spend a network round trip guessing at a project nobody chose; session
+// start is where the user is told how to bind it.
+const marker = readProjectMarker(input.cwd ?? process.cwd());
+if (!marker) process.exit(0);
+
+// Claimed only once there is something to claim it for: burning the session's
+// single gather on an unbound repo would mean running init mid-session never
+// took effect.
+if (!claimOnce(input.session_id, "recall")) process.exit(0);
 
 let url: string;
 const override = process.env["JITERA_MCP_URL"];
@@ -38,11 +48,7 @@ if (override) {
   }
 }
 
-const transport = {
-  url,
-  apiKey,
-  projectUuid: readProjectMarker(input.cwd ?? process.cwd())?.project,
-};
+const transport = { url, apiKey, projectUuid: marker.project };
 
 const task = promptText(input);
 

@@ -3,12 +3,18 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { emitContext, readHookInput } from "../hook-io.js";
+import { readProjectMarker } from "../project-marker.js";
 const CONTENT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "content");
 const CHECKPOINT_EVERY_TURNS = 5;
-const turn = readHookInput().turn_number;
+const input = readHookInput();
+const turn = input.turn_number;
 if (!Number.isInteger(turn) || turn < 1)
     process.exit(0);
 if (turn % CHECKPOINT_EVERY_TURNS !== 0)
+    process.exit(0);
+// The checkpoint asks the model to write to project memory, which needs a
+// project. Unbound repositories get nothing, same as the other hooks.
+if (!readProjectMarker(input.cwd ?? process.cwd()))
     process.exit(0);
 let directive;
 try {

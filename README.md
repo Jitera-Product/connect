@@ -60,19 +60,26 @@ CLAUDE.md above a repo leaks into every project underneath it.
 ## what applies where
 
 the api key is global: one per user, per machine, stored by `login --install`.
-every repo you open uses it, so init is optional and nothing breaks without it.
+it says who you are, not which project you are in.
 
-`.jitera.json` configures nothing by itself. it declares what the repo expects,
-and sessions check the two against each other. a teammate who has not signed in
-yet gets the exact login command for the right environment. a teammate pointed
-at a different environment gets a warning instead of quietly reading the wrong
-project.
+`.jitera.json` says which project. without it a repo is unbound, and the hooks
+do nothing at all there: no context is gathered, no checkpoint is asked for, and
+no call reaches the server. a repo you have not run `init` in is left alone,
+which is why init is per repo and login is per machine.
 
-with a user-level key it does one more thing: it picks the project. the proxy
-and the hooks read it and send it as an `X-Jitera-Project` header, so several
-repos on one machine can talk to different projects through a single key. older
-deployments bind the key itself to one project, and there the marker only makes
-a mismatch visible.
+an unbound session is not silent about it. session start tells the assistant the
+repo is unbound and to suggest `npx @jitera/connect init`, and the status line
+shows the same thing.
+
+sessions also check the marker against the plugin. a teammate who has not signed
+in yet gets the exact login command for the right environment. a teammate
+pointed at a different environment gets a warning instead of quietly reading the
+wrong project.
+
+the proxy and the hooks send the project it names as an `X-Jitera-Project`
+header, so several repos on one machine can talk to different projects through a
+single key. older deployments bind the key itself to one project; there the
+marker still decides whether the hooks run, and makes a mismatch visible.
 
 ## seeing your keys
 

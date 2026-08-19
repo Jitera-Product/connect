@@ -18,6 +18,31 @@ test("no recorded status at all renders quietly", () => {
   assert.equal(plain(line), "○ jitera");
 });
 
+test("a connected but unbound repo carries the command that binds it", () => {
+  const line = renderStatusLine({
+    status: { configured: true, environment: "studio-05" },
+    bound: false,
+  });
+  assert.match(plain(line), /not initialised/);
+  assert.match(plain(line), /npx @jitera\/connect init/);
+  assert.match(line, /\[33m/, "the dot must be yellow, since action is needed");
+});
+
+test("an unchecked binding is not reported as unbound", () => {
+  // `bound` omitted means the caller never looked, which is not the same as
+  // looking and finding nothing.
+  const line = renderStatusLine({ status: { configured: true, environment: "studio-05" } });
+  assert.ok(!/not initialised/.test(plain(line)));
+});
+
+test("a bound repo shows the normal line", () => {
+  const line = renderStatusLine({
+    status: { configured: true, environment: "studio-05" },
+    bound: true,
+  });
+  assert.equal(plain(line), "● jitera · studio-05");
+});
+
 test("a configured session shows a filled dot and its environment", () => {
   const line = renderStatusLine({ status: { configured: true, environment: "studio-05" } });
   assert.equal(plain(line), "● jitera · studio-05");

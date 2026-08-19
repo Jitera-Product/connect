@@ -2,9 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { claimOnce, markerPath } from "../src/session-marker.ts";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { isolatedTmpdir, runNode, stubServer, toolTextServer } from "./helpers.ts";
 
 const HOOK = "dist/hooks/user-prompt-submit.js";
+
+// The hook does nothing at all in a repository with no .jitera.json, so every
+// test that expects it to act has to run inside a bound one.
+function markedRepo(marker: Record<string, unknown> = { project: "proj-1" }): string {
+  const root = isolatedTmpdir();
+  writeFileSync(join(root, ".jitera.json"), JSON.stringify(marker), "utf8");
+  return root;
+}
+
+const BOUND = markedRepo();
 
 interface HookOutput {
   readonly hookSpecificOutput: {
@@ -39,7 +52,7 @@ test("marker path does not leak the raw session id", () => {
 test("the first prompt of a session injects real memory", async () => {
   const server = await toolTextServer("Checkout Service (Service)\n- owns refunds");
   const { stdout } = await runNode(HOOK, {
-    input: { hook_event_name: "UserPromptSubmit", session_id: "s1", prompt_text: "hi" },
+    input: { hook_event_name: "UserPromptSubmit", session_id: "s1", prompt_text: "hi", cwd: BOUND },
     env: env(server.url),
   });
   const parsed = JSON.parse(stdout) as HookOutput;
@@ -59,7 +72,7 @@ function toolCall(server: { requests: readonly Record<string, unknown>[] }, inde
 test("the gather call carries the prompt as the task", async () => {
   const server = await toolTextServer("memory");
   await runNode(HOOK, {
-    input: { session_id: "s-args", prompt: "how do refunds work" },
+    input: { session_id: "s-args", prompt: "how do refunds work", cwd: BOUND },
     env: env(server.url),
   });
   const params = toolCall(server);
@@ -72,7 +85,7 @@ test("the gather call carries the prompt as the task", async () => {
 test("the prompt_text field is read too, since which one arrives was never exercised", async () => {
   const server = await toolTextServer("memory");
   await runNode(HOOK, {
-    input: { session_id: "s-legacy-field", prompt_text: "how do refunds work" },
+    input: { session_id: "s-legacy-field", prompt_text: "how do refunds work", cwd: BOUND },
     env: env(server.url),
   });
   assert.equal(toolCall(server).arguments["task"], "how do refunds work");
@@ -103,7 +116,7 @@ test("a deployment without the composite tool falls back to a plain recall", asy
   });
 
   const { stdout } = await runNode(HOOK, {
-    input: { session_id: "s-fallback", prompt: "refunds" },
+    input: { session_id: "s-fallback", prompt: "refunds", cwd: BOUND },
     env: env(server.url),
   });
 
@@ -128,7 +141,7 @@ test("both tools failing degrades silently rather than breaking the prompt", asy
   });
 
   const { stdout, code } = await runNode(HOOK, {
-    input: { session_id: "s-both-fail", prompt: "refunds" },
+    input: { session_id: "s-both-fail", prompt: "refunds", cwd: BOUND },
     env: env(server.url),
   });
 
@@ -140,7 +153,7 @@ test("both tools failing degrades silently rather than breaking the prompt", asy
 test("later prompts in the same session stay silent", async () => {
   const server = await toolTextServer("some memory");
   const tmp = isolatedTmpdir();
-  const input = { hook_event_name: "UserPromptSubmit", session_id: "s2" };
+  const input = { hook_event_name: "UserPromptSubmit", session_id: "s2", cwd: BOUND };
   assert.notEqual((await runNode(HOOK, { input, env: env(server.url, tmp) })).stdout.trim(), "");
   assert.equal((await runNode(HOOK, { input, env: env(server.url, tmp) })).stdout.trim(), "");
   assert.equal((await runNode(HOOK, { input, env: env(server.url, tmp) })).stdout.trim(), "");
@@ -151,11 +164,11 @@ test("a different session recalls again", async () => {
   const server = await toolTextServer("some memory");
   const tmp = isolatedTmpdir();
   assert.notEqual(
-    (await runNode(HOOK, { input: { session_id: "a" }, env: env(server.url, tmp) })).stdout.trim(),
+    (await runNode(HOOK, { input: { session_id: "a", cwd: BOUND }, env: env(server.url, tmp) })).stdout.trim(),
     ""
   );
   assert.notEqual(
-    (await runNode(HOOK, { input: { session_id: "b" }, env: env(server.url, tmp) })).stdout.trim(),
+    (await runNode(HOOK, { input: { session_id: "b", cwd: BOUND }, env: env(server.url, tmp) })).stdout.trim(),
     ""
   );
   await server.close();
@@ -172,7 +185,7 @@ test("no api key means silent no-op, never a broken session", async () => {
 
 test("an unknown environment name degrades instead of crashing the prompt", async () => {
   const { stdout, stderr, code } = await runNode(HOOK, {
-    input: { session_id: "s-bad-env" },
+    input: { session_id: "s-bad-env", cwd: BOUND },
     env: {
       CLAUDE_PLUGIN_OPTION_ENVIRONMENT: "studio-banana",
       CLAUDE_PLUGIN_OPTION_JITERA_API_KEY: "sk-test",
@@ -187,21 +200,21 @@ test("an unreachable server degrades silently on stdout", async () => {
   const server = await toolTextServer("x");
   const dead = server.url;
   await server.close();
-  const { stdout, code } = await runNode(HOOK, { input: { session_id: "s4" }, env: env(dead) });
+  const { stdout, code } = await runNode(HOOK, { input: { session_id: "s4", cwd: BOUND }, env: env(dead) });
   assert.equal(stdout.trim(), "");
   assert.equal(code, 0);
 });
 
 test("empty memory injects nothing rather than an empty banner", async () => {
   const server = await toolTextServer("");
-  const { stdout } = await runNode(HOOK, { input: { session_id: "s5" }, env: env(server.url) });
+  const { stdout } = await runNode(HOOK, { input: { session_id: "s5", cwd: BOUND }, env: env(server.url) });
   assert.equal(stdout.trim(), "");
   await server.close();
 });
 
 test("oversized memory is truncated with a pointer to the tool", async () => {
   const server = await toolTextServer("x".repeat(9000));
-  const { stdout } = await runNode(HOOK, { input: { session_id: "s6" }, env: env(server.url) });
+  const { stdout } = await runNode(HOOK, { input: { session_id: "s6", cwd: BOUND }, env: env(server.url) });
   const ctx = (JSON.parse(stdout) as HookOutput).hookSpecificOutput.additionalContext;
   assert.ok(ctx.length < 7000, `context was ${ctx.length} chars`);
   assert.match(ctx, /truncated/);
@@ -209,8 +222,6 @@ test("oversized memory is truncated with a pointer to the tool", async () => {
 });
 
 test("recall carries the repo's project binding as a header", async () => {
-  const { writeFileSync } = await import("node:fs");
-  const { join } = await import("node:path");
   const server = await toolTextServer("remembered");
   const dir = isolatedTmpdir();
   writeFileSync(join(dir, ".jitera.json"), JSON.stringify({ project: "proj-9" }), "utf8");
@@ -220,12 +231,51 @@ test("recall carries the repo's project binding as a header", async () => {
   assert.equal(server.headers[0]?.["x-jitera-project"], "proj-9");
 });
 
-test("no repo binding sends no project header", async () => {
+test("an unbound repository is left alone entirely", async () => {
   const server = await toolTextServer("remembered");
-  await runNode(HOOK, {
-    input: { session_id: "s8", cwd: isolatedTmpdir() },
+  const { stdout, code } = await runNode(HOOK, {
+    input: { session_id: "s8", cwd: isolatedTmpdir(), prompt: "refunds" },
     env: env(server.url),
   });
   await server.close();
-  assert.equal(server.headers[0]?.["x-jitera-project"], undefined);
+
+  // Not merely a missing header: without .jitera.json there is no project to
+  // gather context for, so the hook never reaches the network.
+  assert.deepEqual(server.requests, []);
+  assert.equal(stdout.trim(), "");
+  assert.equal(code, 0);
+});
+
+test("an unbound run does not spend the session's one gather", async () => {
+  const server = await toolTextServer("bound at last");
+  const tmp = isolatedTmpdir();
+
+  // Same session: unbound first, then bound, as if the user ran init midway.
+  const before = await runNode(HOOK, {
+    input: { session_id: "s-init-midway", cwd: isolatedTmpdir(), prompt: "refunds" },
+    env: env(server.url, tmp),
+  });
+  const after = await runNode(HOOK, {
+    input: { session_id: "s-init-midway", cwd: markedRepo(), prompt: "refunds" },
+    env: env(server.url, tmp),
+  });
+  await server.close();
+
+  assert.equal(before.stdout.trim(), "");
+  assert.match(after.stdout, /bound at last/);
+});
+
+test("a malformed marker counts as unbound rather than acting on a guess", async () => {
+  const server = await toolTextServer("remembered");
+  const root = isolatedTmpdir();
+  writeFileSync(join(root, ".jitera.json"), "{ not json", "utf8");
+
+  const { stdout } = await runNode(HOOK, {
+    input: { session_id: "s9", cwd: root, prompt: "refunds" },
+    env: env(server.url),
+  });
+  await server.close();
+
+  assert.deepEqual(server.requests, []);
+  assert.equal(stdout.trim(), "");
 });

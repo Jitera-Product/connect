@@ -30,6 +30,11 @@ matching is dry. It also lists the project's agents, so a recalled fact can be
 attributed. Use it before planning or answering, then narrow with the tools
 below.
 
+It is not a once-per-session lookup. Call it again whenever the work reaches
+something you have not gathered context for yet: a subsystem you have not
+touched, a name you do not recognise, or a decision about how something should
+work. Checking costs one call; guessing costs the rest of the session.
+
 ## Searching
 
 ```

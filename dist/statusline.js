@@ -8,11 +8,16 @@ function compactChars(chars) {
 function compactMs(ms) {
     return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
 }
-export function renderStatusLine({ status, markerEnvironment }) {
+export function renderStatusLine({ status, markerEnvironment, bound, }) {
     if (!status)
         return `${DIM}○${RESET} jitera`;
     if (!status.configured)
         return `${DIM}○${RESET} jitera · not connected`;
+    // Connected, but this repository is not bound to a project, so the hooks
+    // deliberately do nothing here. Carry the command that fixes it.
+    if (bound === false) {
+        return `${YELLOW}○${RESET} jitera · not initialised · npx @jitera/connect init`;
+    }
     const dot = status.recallError ? `${YELLOW}●${RESET}` : `${GREEN}●${RESET}`;
     const parts = [`${dot} jitera`];
     if (status.environment)
