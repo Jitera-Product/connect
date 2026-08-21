@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { PassThrough } from "node:stream";
 
-import { configFromEnvironment, resolveProjectUuid, runProxy, type ProxyConfig } from "../src/proxy.ts";
+import {
+  configFromEnvironment,
+  resolveProjectUuid,
+  runProxy,
+  withAgentSelection,
+  type ProxyConfig,
+} from "../src/proxy.ts";
 import { UnknownEnvironmentError } from "../src/environments.ts";
 import { stubServer as jsonStubServer } from "./helpers.ts";
 
@@ -267,4 +273,47 @@ test("an unknown environment is rejected before any connection is attempted", as
     () => configFromEnvironment({ JITERA_ENVIRONMENT: "studio-banana", JITERA_API_KEY: "k" }),
     UnknownEnvironmentError
   );
+});
+
+const callFor = (name: string, args: Record<string, unknown> = {}) => ({
+  jsonrpc: "2.0" as const,
+  id: 1,
+  method: "tools/call",
+  params: { name, arguments: args },
+});
+
+test("the repository's agents are applied to a memory call", () => {
+  const out = withAgentSelection(callFor("recall_jitera_memory"), ["a1", "a2"]);
+  const params = out.params as { arguments: Record<string, unknown> };
+  assert.deepEqual(params.arguments["agents"], ["a1", "a2"]);
+});
+
+test("gathering context is narrowed the same way", () => {
+  const out = withAgentSelection(callFor("gather_jitera_context", { task: "refunds" }), ["a1"]);
+  const params = out.params as { arguments: Record<string, unknown> };
+  assert.deepEqual(params.arguments["agents"], ["a1"]);
+  assert.equal(params.arguments["task"], "refunds", "existing arguments survive");
+});
+
+test("a caller that named agents itself is left alone", () => {
+  // The caller has been more specific than the repository default.
+  const out = withAgentSelection(callFor("recall_jitera_memory", { agents: ["mine"] }), ["a1"]);
+  const params = out.params as { arguments: Record<string, unknown> };
+  assert.deepEqual(params.arguments["agents"], ["mine"]);
+});
+
+test("tools that do not read memory are untouched", () => {
+  const request = callFor("resource_search", { content: "refund" });
+  assert.equal(withAgentSelection(request, ["a1"]), request);
+});
+
+test("no selection changes nothing", () => {
+  const request = callFor("recall_jitera_memory");
+  assert.equal(withAgentSelection(request, undefined), request);
+  assert.equal(withAgentSelection(request, []), request);
+});
+
+test("non tool-call traffic passes straight through", () => {
+  const request = { jsonrpc: "2.0" as const, id: 2, method: "tools/list" };
+  assert.equal(withAgentSelection(request, ["a1"]), request);
 });

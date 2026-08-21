@@ -57,6 +57,37 @@ it refuses to run outside a git repository. instructions written above a repo
 are invisible to anything that reads AGENTS.md from the repo root, and a
 CLAUDE.md above a repo leaks into every project underneath it.
 
+## choosing which agents a repo reads
+
+```
+npx @jitera/connect set-agent
+```
+
+a project's memory is partitioned per agent. by default a bound repo reads all
+of them, which is right when the project is one thing and wrong when it is
+five: everything the other agents know arrives as noise.
+
+`set-agent` lists the project's published agents with checkboxes. move with the
+arrow keys, press space to tick the ones this repo should read, and enter to
+save. the current selection starts ticked, so re-running it shows today's state
+rather than a blank slate. `a` ticks everything, `n` clears it.
+
+the choice is written to `.jitera.json` as an `agents` list and committed with
+it, so your teammates read the same agents you do.
+
+```
+npx @jitera/connect set-agent --agent=<id> --agent=<id>   # skip the prompt
+npx @jitera/connect set-agent --all                       # read every agent again
+npx @jitera/connect set-agent --dry-run                   # show, do not write
+```
+
+saving nothing means every agent, which is the same as `--all`. memory that
+belongs to no agent — anything written project-wide — is always read, whatever
+you select, so a selection narrows the noise without hiding shared facts.
+
+it needs the repo bound to a project first, because that is what says which
+agents exist. run `init` if it is not.
+
 ## what applies where
 
 the api key is global: one per user, per machine, stored by `login --install`.

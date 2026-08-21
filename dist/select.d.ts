@@ -33,4 +33,15 @@ export interface SelectOptions<T> {
     readonly output: SelectOutput;
 }
 export declare function interactiveSelect<T>({ items, prompt, label, theme, input, output }: SelectOptions<T>): Promise<T>;
+export interface MultiSelectOptions<T> extends SelectOptions<T> {
+    readonly selected?: (item: T) => boolean;
+}
+export declare function multiSelect<T>({ items, prompt, label, theme, input, output, selected, }: MultiSelectOptions<T>): Promise<T[]>;
+export declare function chooseManyFrom<T>({ items, prompt, label, theme, selected, }: {
+    readonly items: readonly T[];
+    readonly prompt: string;
+    readonly label: (item: T) => string;
+    readonly theme: Theme;
+    readonly selected?: (item: T) => boolean;
+}): Promise<T[]>;
 //# sourceMappingURL=select.d.ts.map

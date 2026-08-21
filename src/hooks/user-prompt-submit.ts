@@ -53,6 +53,10 @@ if (override) {
 
 const transport = { url, apiKey, projectUuid: marker.project };
 
+// `set-agent` records which agents this repository reads. Absent means every
+// agent, which is what the tools do when the argument is omitted.
+const agents = marker.agents && marker.agents.length > 0 ? [...marker.agents] : undefined;
+
 const task = promptText(input).slice(0, MAX_TASK_CHARS);
 
 // The blind recall serves two purposes: it is what deployments predating the
@@ -63,7 +67,7 @@ const recall = () =>
   callTool({
     ...transport,
     name: "recall_jitera_memory",
-    args: {},
+    args: agents ? { agents } : {},
     timeoutMs: RECALL_TIMEOUT_MS,
   });
 
@@ -94,7 +98,7 @@ try {
     ? await callTool({
         ...transport,
         name: "gather_jitera_context",
-        args: { task, budget: MAX_CONTEXT_CHARS },
+        args: { task, budget: MAX_CONTEXT_CHARS, ...(agents ? { agents } : {}) },
         timeoutMs: GATHER_TIMEOUT_MS,
       })
     : await recall();

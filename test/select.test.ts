@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
 import { createTheme } from "../src/theme.ts";
-import { SelectCancelledError, interactiveSelect } from "../src/select.ts";
+import { SelectCancelledError, interactiveSelect, multiSelect } from "../src/select.ts";
 
 const theme = createTheme({ env: { NO_COLOR: "1" } as NodeJS.ProcessEnv, isTty: true });
 
@@ -130,4 +130,89 @@ test("an empty list rejects instead of hanging", async () => {
       output: { write: () => true },
     })
   );
+});
+
+function multiSelecting(
+  items: readonly string[] = ["alpha", "beta", "gamma"],
+  selected?: (item: string) => boolean
+) {
+  const input = new FakeInput();
+  const written: string[] = [];
+  const picked = multiSelect({
+    items,
+    prompt: "Which ones?",
+    label: (item) => item,
+    theme,
+    input,
+    output: { write: (chunk: string) => written.push(chunk) },
+    ...(selected ? { selected } : {}),
+  });
+  const press = (...keys: string[]) => {
+    for (const key of keys) input.emit("data", Buffer.from(key));
+  };
+  return { picked, press, input, rendered: () => written.join("") };
+}
+
+test("space ticks the highlighted item and enter saves it", async () => {
+  const { picked, press } = multiSelecting();
+  press(" ", "\r");
+  assert.deepEqual(await picked, ["alpha"]);
+});
+
+test("several items can be ticked", async () => {
+  const { picked, press } = multiSelecting();
+  press(" ", "\u001b[B", "\u001b[B", " ", "\r");
+  assert.deepEqual(await picked, ["alpha", "gamma"]);
+});
+
+test("space toggles, so pressing it twice unticks", async () => {
+  const { picked, press } = multiSelecting();
+  press(" ", " ", "\r");
+  assert.deepEqual(await picked, []);
+});
+
+test("saving with nothing ticked is allowed, and means every agent", async () => {
+  const { picked, press } = multiSelecting();
+  press("\r");
+  assert.deepEqual(await picked, []);
+});
+
+test("a starts from everything ticked and n clears it", async () => {
+  const all = multiSelecting();
+  all.press("a", "\r");
+  assert.deepEqual(await all.picked, ["alpha", "beta", "gamma"]);
+
+  const none = multiSelecting();
+  none.press("a", "n", "\r");
+  assert.deepEqual(await none.picked, []);
+});
+
+test("the current selection starts ticked, so re-running shows today's state", async () => {
+  const { picked, press } = multiSelecting(["alpha", "beta", "gamma"], (item) => item === "beta");
+  press("\r");
+  assert.deepEqual(await picked, ["beta"]);
+});
+
+test("checkboxes are drawn for every row", async () => {
+  const { picked, press, rendered } = multiSelecting();
+  press(" ");
+  const frame = rendered();
+  assert.match(frame, /\[x\]/, "the ticked row shows a filled box");
+  assert.match(frame, /\[ \]/, "unticked rows show an empty box");
+  press("\r");
+  await picked;
+});
+
+test("escape cancels a multi-select without saving", async () => {
+  const { picked, press } = multiSelecting();
+  press(" ", "\u001b");
+  await assert.rejects(picked, (error: unknown) => error instanceof SelectCancelledError);
+});
+
+test("a multi-select restores the cursor and leaves raw mode", async () => {
+  const { picked, press, input, rendered } = multiSelecting();
+  press("\r");
+  await picked;
+  assert.deepEqual(input.rawModes, [true, false]);
+  assert.match(rendered(), /\u001b\[\?25h/, "the cursor is shown again");
 });

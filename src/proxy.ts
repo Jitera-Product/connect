@@ -18,6 +18,7 @@ export interface ProxyConfig {
   readonly apiKey: string;
   readonly instructions?: string | undefined;
   readonly projectUuid?: string | undefined;
+  readonly agents?: readonly string[] | undefined;
 }
 
 // The repository's committed .jitera.json binds the workspace to a project;
@@ -29,6 +30,38 @@ export function resolveProjectUuid(
   const override = (env["JITERA_PROJECT"] ?? "").trim();
   if (override) return override;
   return readProjectMarker(cwd)?.project;
+}
+
+export function resolveAgents(cwd: string): readonly string[] | undefined {
+  const agents = readProjectMarker(cwd)?.agents;
+  return agents && agents.length > 0 ? agents : undefined;
+}
+
+// Tools whose reach `set-agent` narrows. Clients other than Claude Code reach
+// the server through this proxy, so the repository's choice is applied here
+// rather than relying on every client to know about it.
+const AGENT_SCOPED_TOOLS = new Set(["recall_jitera_memory", "gather_jitera_context"]);
+
+export function withAgentSelection(
+  request: JsonRpcRequest,
+  agents: readonly string[] | undefined
+): JsonRpcRequest {
+  if (!agents || agents.length === 0 || request.method !== "tools/call") return request;
+
+  const params = request.params as
+    | { name?: string; arguments?: Record<string, unknown> }
+    | undefined;
+  if (!params?.name || !AGENT_SCOPED_TOOLS.has(params.name)) return request;
+
+  // A caller that named agents itself has been more specific than the
+  // repository default, so leave it alone.
+  const args = params.arguments ?? {};
+  if ("agents" in args) return request;
+
+  return {
+    ...request,
+    params: { ...params, arguments: { ...args, agents: [...agents] } },
+  };
 }
 
 function isNotification(request: JsonRpcRequest): boolean {
@@ -47,7 +80,7 @@ function injectInstructions(response: unknown, instructions: string): void {
 }
 
 export async function runProxy(
-  { url, apiKey, instructions, projectUuid }: ProxyConfig,
+  { url, apiKey, instructions, projectUuid, agents }: ProxyConfig,
   { input, output, log }: ProxyStreams
 ): Promise<void> {
   const lines = createInterface({ input, crlfDelay: Infinity });
@@ -66,7 +99,12 @@ export async function runProxy(
 
     let response;
     try {
-      response = await postRpc(request, { url, apiKey, projectUuid, timeoutMs: REQUEST_TIMEOUT_MS });
+      response = await postRpc(withAgentSelection(request, agents), {
+        url,
+        apiKey,
+        projectUuid,
+        timeoutMs: REQUEST_TIMEOUT_MS,
+      });
     } catch (error) {
       const message = error instanceof McpCallError ? error.message : String(error);
       log.write(`jitera-connect proxy: ${message}\n`);

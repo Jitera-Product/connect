@@ -105,6 +105,28 @@ export async function listProjects(transport, organisation) {
     }
     return [...seen.values()];
 }
+// `status: published` matches what the studio lists: draft workflows are not
+// agents anyone is working with yet.
+const AGENTS_DOCUMENT = `query ConnectAgents($projectUuid: String!) {
+  boostWorkflows(
+    where: { projectUuid: { _eq: $projectUuid }, status: { _eq: "published" } }
+    orderBy: [{ createdAt: DESC_NULLS_LAST }]
+  ) {
+    id
+    name
+    description
+  }
+}`;
+export async function listAgents(transport, projectUuid) {
+    const data = await query("ConnectAgents", AGENTS_DOCUMENT, { projectUuid }, transport);
+    return (data.boostWorkflows ?? [])
+        .filter((row) => typeof row?.id === "string" && row.id.length > 0)
+        .map((row) => ({
+        id: row.id,
+        name: row.name?.trim() || row.id,
+        description: row.description?.trim() || null,
+    }));
+}
 const CREATE_KEY_DOCUMENT = `mutation ConnectCreateApiKey($params: CreateApiKeyInput!) {
   createApiKey(params: $params) {
     rawKey

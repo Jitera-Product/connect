@@ -5,6 +5,7 @@ import { createServer, type ServerResponse } from "node:http";
 import {
   GraphqlError,
   createApiKey,
+  listAgents,
   listOrganisations,
   listProjects,
 } from "../src/graphql.ts";
@@ -290,3 +291,68 @@ test("a failing teams query degrades to no organisations rather than throwing", 
   await server.close();
 });
 
+test("agents are read from the published workflows of one project", async () => {
+  let variables: Record<string, unknown> = {};
+  let document = "";
+  const server = await serve((_operation, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        data: {
+          boostWorkflows: [
+            { id: "a1", name: "Billing", description: "  refunds  " },
+            { id: "a2", name: "  ", description: null },
+          ],
+        },
+      })
+    );
+  });
+
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as {
+      query: string;
+      variables: Record<string, unknown>;
+    };
+    document = body.query;
+    variables = body.variables;
+    return original(input, init);
+  };
+
+  const agents = await listAgents(
+    { automationUrl: server.url, accessToken: "t" },
+    "project-uuid"
+  );
+  globalThis.fetch = original;
+  await server.close();
+
+  assert.equal(variables["projectUuid"], "project-uuid");
+  assert.match(document, /boostWorkflows/);
+  assert.match(document, /status: \{ _eq: "published" \}/, "drafts are not agents yet");
+  assert.deepEqual(agents, [
+    { id: "a1", name: "Billing", description: "refunds" },
+    { id: "a2", name: "a2", description: null },
+  ]);
+});
+
+test("rows without an id are dropped rather than offered", async () => {
+  const server = await serve((_operation, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ data: { boostWorkflows: [{ name: "nameless" }, { id: "a1" }] } }));
+  });
+
+  const agents = await listAgents({ automationUrl: server.url, accessToken: "t" }, "p");
+  await server.close();
+  assert.deepEqual(agents.map((a) => a.id), ["a1"]);
+});
+
+test("a project with no agents is not an error", async () => {
+  const server = await serve((_operation, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ data: { boostWorkflows: null } }));
+  });
+
+  const agents = await listAgents({ automationUrl: server.url, accessToken: "t" }, "p");
+  await server.close();
+  assert.deepEqual(agents, []);
+});

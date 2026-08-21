@@ -12,6 +12,30 @@ export function resolveProjectUuid(env, cwd = process.cwd()) {
         return override;
     return readProjectMarker(cwd)?.project;
 }
+export function resolveAgents(cwd) {
+    const agents = readProjectMarker(cwd)?.agents;
+    return agents && agents.length > 0 ? agents : undefined;
+}
+// Tools whose reach `set-agent` narrows. Clients other than Claude Code reach
+// the server through this proxy, so the repository's choice is applied here
+// rather than relying on every client to know about it.
+const AGENT_SCOPED_TOOLS = new Set(["recall_jitera_memory", "gather_jitera_context"]);
+export function withAgentSelection(request, agents) {
+    if (!agents || agents.length === 0 || request.method !== "tools/call")
+        return request;
+    const params = request.params;
+    if (!params?.name || !AGENT_SCOPED_TOOLS.has(params.name))
+        return request;
+    // A caller that named agents itself has been more specific than the
+    // repository default, so leave it alone.
+    const args = params.arguments ?? {};
+    if ("agents" in args)
+        return request;
+    return {
+        ...request,
+        params: { ...params, arguments: { ...args, agents: [...agents] } },
+    };
+}
 function isNotification(request) {
     return request.id === undefined || request.id === null;
 }
@@ -24,7 +48,7 @@ function injectInstructions(response, instructions) {
         result["instructions"] = instructions;
     }
 }
-export async function runProxy({ url, apiKey, instructions, projectUuid }, { input, output, log }) {
+export async function runProxy({ url, apiKey, instructions, projectUuid, agents }, { input, output, log }) {
     const lines = createInterface({ input, crlfDelay: Infinity });
     for await (const line of lines) {
         const trimmed = line.trim();
@@ -40,7 +64,12 @@ export async function runProxy({ url, apiKey, instructions, projectUuid }, { inp
         }
         let response;
         try {
-            response = await postRpc(request, { url, apiKey, projectUuid, timeoutMs: REQUEST_TIMEOUT_MS });
+            response = await postRpc(withAgentSelection(request, agents), {
+                url,
+                apiKey,
+                projectUuid,
+                timeoutMs: REQUEST_TIMEOUT_MS,
+            });
         }
         catch (error) {
             const message = error instanceof McpCallError ? error.message : String(error);

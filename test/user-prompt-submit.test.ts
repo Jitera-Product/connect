@@ -118,6 +118,27 @@ test("a whitespace-only prompt counts as no prompt", async () => {
   assert.equal(toolCall(server).name, "recall_jitera_memory");
 });
 
+test("the repository's agent selection is sent with the gather", async () => {
+  const server = await toolTextServer("memory");
+  const cwd = markedRepo({ project: "p1", agents: ["a1", "a2"] });
+  await runNode(HOOK, {
+    input: { session_id: "s-agents", cwd, prompt: "refunds" },
+    env: env(server.url),
+  });
+  await server.close();
+  assert.deepEqual(toolCall(server).arguments["agents"], ["a1", "a2"]);
+});
+
+test("no selection sends no agents, which the server reads as every agent", async () => {
+  const server = await toolTextServer("memory");
+  await runNode(HOOK, {
+    input: { session_id: "s-no-agents", cwd: BOUND, prompt: "refunds" },
+    env: env(server.url),
+  });
+  await server.close();
+  assert.ok(!("agents" in toolCall(server).arguments));
+});
+
 test("a deployment without the composite tool falls back to a plain recall", async () => {
   const server = await stubServer((body, res) => {
     const params = body["params"] as { name: string };

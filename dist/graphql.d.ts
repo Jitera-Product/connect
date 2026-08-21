@@ -22,6 +22,12 @@ export interface Organisation {
 }
 export declare function listOrganisations(transport: GraphqlTransport): Promise<Organisation[]>;
 export declare function listProjects(transport: GraphqlTransport, organisation?: Organisation): Promise<ProjectSummary[]>;
+export interface AgentSummary {
+    readonly id: string;
+    readonly name: string;
+    readonly description: string | null;
+}
+export declare function listAgents(transport: GraphqlTransport, projectUuid: string): Promise<AgentSummary[]>;
 export type McpAccess = "read" | "read_write";
 export interface CreatedApiKey {
     readonly rawKey: string;

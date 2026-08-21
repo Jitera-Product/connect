@@ -36,4 +36,27 @@ export function loadCliSession(env = process.env) {
 export function isExpired(session, now = Date.now()) {
     return typeof session.expiresAt === "number" && now >= session.expiresAt - EXPIRY_MARGIN_MS;
 }
+// A stored sign-in, refreshed if it has aged out. Shared by every command that
+// talks to the automation API without sending the user back to the browser.
+export async function transportFor(session, refresh, now = Date.now()) {
+    if (!isExpired(session, now)) {
+        return { automationUrl: session.automationUrl, accessToken: session.accessToken };
+    }
+    if (!session.refreshToken) {
+        throw new Error("the stored sign-in expired. Run login again.");
+    }
+    const refreshed = await refresh({
+        automationUrl: session.automationUrl,
+        refreshToken: session.refreshToken,
+    });
+    saveCliSession({
+        ...session,
+        accessToken: refreshed.accessToken,
+        refreshToken: refreshed.refreshToken ?? session.refreshToken,
+        ...(refreshed.expiresInSeconds
+            ? { expiresAt: now + refreshed.expiresInSeconds * 1000 }
+            : {}),
+    });
+    return { automationUrl: session.automationUrl, accessToken: refreshed.accessToken };
+}
 //# sourceMappingURL=cli-session.js.map

@@ -10,6 +10,9 @@ const SAFE_ENVIRONMENT = /^[A-Za-z0-9-]{1,64}$/;
 export interface ProjectMarker {
   readonly environment?: string | undefined;
   readonly project?: string | undefined;
+  // Which agents' memory this repository reads. Absent means every agent in
+  // the project, which is the default and what most repositories want.
+  readonly agents?: readonly string[] | undefined;
 }
 
 export interface FoundProjectMarker extends ProjectMarker {
@@ -37,12 +40,17 @@ export function readProjectMarker(startDir: string): FoundProjectMarker | undefi
       const fields = parsed as Record<string, unknown>;
       const environment = fields["environment"];
       const project = fields["project"];
+      const agents = fields["agents"];
+      const agentIds = Array.isArray(agents)
+        ? agents.filter((id): id is string => typeof id === "string" && id.trim() !== "")
+        : undefined;
       return {
         path,
         ...(typeof environment === "string" && SAFE_ENVIRONMENT.test(environment)
           ? { environment }
           : {}),
         ...(typeof project === "string" ? { project } : {}),
+        ...(agentIds && agentIds.length > 0 ? { agents: agentIds } : {}),
       };
     }
     // Never look past the repository root. `init` writes the marker there, so
@@ -79,11 +87,18 @@ export function writeProjectMarker(
     }
   }
 
-  const next = {
+  const next: Record<string, unknown> = {
     ...existing,
     ...(marker.environment ? { environment: marker.environment } : {}),
     ...(marker.project ? { project: marker.project } : {}),
   };
+
+  // An empty list is a real choice - "read every agent" - and has to erase a
+  // previous selection rather than be mistaken for "leave it alone".
+  if (marker.agents) {
+    if (marker.agents.length > 0) next["agents"] = [...marker.agents];
+    else delete next["agents"];
+  }
   const serialized = `${JSON.stringify(next, undefined, 2)}\n`;
   const changed = before !== serialized;
   if (changed && !dryRun) writeFileSync(path, serialized, "utf8");

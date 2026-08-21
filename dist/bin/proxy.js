@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { DiscoveryError } from "../discovery.js";
 import { UnknownEnvironmentError } from "../environments.js";
 import { render } from "../install/render.js";
-import { configFromEnvironment, resolveProjectUuid, runProxy } from "../proxy.js";
+import { configFromEnvironment, resolveAgents, resolveProjectUuid, runProxy } from "../proxy.js";
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 function loadInstructions(brand) {
     try {
@@ -34,5 +34,6 @@ await runProxy({
     apiKey: config.apiKey,
     instructions: loadInstructions(config.brand),
     projectUuid: resolveProjectUuid(process.env),
+    agents: resolveAgents(process.cwd()),
 }, { input: process.stdin, output: process.stdout, log: process.stderr });
 //# sourceMappingURL=proxy.js.map

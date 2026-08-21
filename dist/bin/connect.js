@@ -6,6 +6,9 @@ if (subcommand === "login") {
 else if (subcommand === "init") {
     await import("./init.js");
 }
+else if (subcommand === "set-agent") {
+    await import("./set-agent.js");
+}
 else if (subcommand === "statusline") {
     await import("./statusline.js");
 }

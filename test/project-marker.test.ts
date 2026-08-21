@@ -125,3 +125,52 @@ test("directories that are not repositories still inherit from above", () => {
 
   assert.equal(readProjectMarker(pkg)?.project, "monorepo");
 });
+
+test("an agent selection round-trips", () => {
+  const root = isolatedTmpdir();
+  writeProjectMarker(root, { project: "p1", agents: ["a1", "a2"] });
+  assert.deepEqual(readProjectMarker(root)?.agents, ["a1", "a2"]);
+});
+
+test("no selection reads as undefined, meaning every agent", () => {
+  const root = isolatedTmpdir();
+  writeProjectMarker(root, { project: "p1" });
+  assert.equal(readProjectMarker(root)?.agents, undefined);
+});
+
+test("an empty selection erases a previous one", () => {
+  const root = isolatedTmpdir();
+  writeProjectMarker(root, { project: "p1", agents: ["a1"] });
+  writeProjectMarker(root, { agents: [] });
+
+  // "every agent" has to be expressible, not just "leave it as it was".
+  assert.equal(readProjectMarker(root)?.agents, undefined);
+  assert.ok(!readFileSync(join(root, MARKER_FILENAME), "utf8").includes("agents"));
+});
+
+test("omitting agents leaves an existing selection alone", () => {
+  const root = isolatedTmpdir();
+  writeProjectMarker(root, { project: "p1", agents: ["a1"] });
+  writeProjectMarker(root, { environment: "studio-06" });
+  assert.deepEqual(readProjectMarker(root)?.agents, ["a1"]);
+});
+
+test("junk entries in the agent list are ignored", () => {
+  const root = isolatedTmpdir();
+  writeFileSync(
+    join(root, MARKER_FILENAME),
+    JSON.stringify({ project: "p1", agents: ["a1", 42, "", null, "a2"] }),
+    "utf8"
+  );
+  assert.deepEqual(readProjectMarker(root)?.agents, ["a1", "a2"]);
+});
+
+test("a non-array agents field is ignored rather than trusted", () => {
+  const root = isolatedTmpdir();
+  writeFileSync(
+    join(root, MARKER_FILENAME),
+    JSON.stringify({ project: "p1", agents: "a1" }),
+    "utf8"
+  );
+  assert.equal(readProjectMarker(root)?.agents, undefined);
+});

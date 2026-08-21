@@ -54,6 +54,12 @@ across all of them, so a recalled fact may have been written by any agent;
 `list_jitera_agents` names them. A key pinned to one agent sees only that
 agent's own partition.
 
+A repository can narrow that itself: `.jitera.json` may carry an `agents` list,
+written by `npx @jitera/connect set-agent`, and sessions there read only those
+agents plus anything written project-wide. Pass `agents` to
+`recall_jitera_memory` or `gather_jitera_context` to narrow a single call the
+same way. Omit it to read every agent.
+
 ## Remember when knowledge is created
 
 Persist with `remember_jitera_memory(name, type, attrs)` when:

@@ -184,6 +184,55 @@ export async function listProjects(
   return [...seen.values()];
 }
 
+export interface AgentSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string | null;
+}
+
+// `status: published` matches what the studio lists: draft workflows are not
+// agents anyone is working with yet.
+const AGENTS_DOCUMENT = `query ConnectAgents($projectUuid: String!) {
+  boostWorkflows(
+    where: { projectUuid: { _eq: $projectUuid }, status: { _eq: "published" } }
+    orderBy: [{ createdAt: DESC_NULLS_LAST }]
+  ) {
+    id
+    name
+    description
+  }
+}`;
+
+interface AgentsResponse {
+  readonly boostWorkflows: readonly {
+    readonly id?: string | null;
+    readonly name?: string | null;
+    readonly description?: string | null;
+  }[] | null;
+}
+
+export async function listAgents(
+  transport: GraphqlTransport,
+  projectUuid: string
+): Promise<AgentSummary[]> {
+  const data = await query<AgentsResponse>(
+    "ConnectAgents",
+    AGENTS_DOCUMENT,
+    { projectUuid },
+    transport
+  );
+
+  return (data.boostWorkflows ?? [])
+    .filter((row): row is { id: string; name?: string | null; description?: string | null } =>
+      typeof row?.id === "string" && row.id.length > 0
+    )
+    .map((row) => ({
+      id: row.id,
+      name: row.name?.trim() || row.id,
+      description: row.description?.trim() || null,
+    }));
+}
+
 export type McpAccess = "read" | "read_write";
 
 export interface CreatedApiKey {
