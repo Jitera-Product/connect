@@ -103,6 +103,46 @@ test("--dry-run reports without writing", async () => {
   assert.ok(!("agents" in markerIn(root)), "a dry run must not touch the file");
 });
 
+test("an empty list does not claim the project has no agents", async () => {
+  // policy_scope returns an empty list for a project the account cannot see,
+  // so the message must not assert the project is empty.
+  const { root } = boundRepo();
+  const server = await import("node:http").then(({ createServer }) => {
+    const s = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: { boostWorkflows: [] } }));
+    });
+    return new Promise<{ url: string; close: () => Promise<void> }>((resolve) => {
+      s.listen(0, "127.0.0.1", () => {
+        const address = s.address();
+        const port = typeof address === "object" && address !== null ? address.port : 0;
+        resolve({
+          url: `http://127.0.0.1:${port}`,
+          close: () => new Promise<void>((done) => s.close(() => done())),
+        });
+      });
+    });
+  });
+
+  const configDir = isolatedTmpdir();
+  writeFileSync(
+    join(configDir, "session.json"),
+    JSON.stringify({ automationUrl: server.url, accessToken: "t", expiresAt: Date.now() + 3_600_000 }),
+    "utf8"
+  );
+
+  const { code, stderr } = await runNode(CONNECT, {
+    args: ["set-agent"],
+    cwd: root,
+    env: { JITERA_CONNECT_CONFIG_DIR: configDir, JITERA_STUDIO_URL: "http://127.0.0.1:1" },
+  });
+  await server.close();
+
+  assert.notEqual(code, 0);
+  assert.match(stderr, /cannot see them/, "a permission cause is named too");
+  assert.match(stderr, /--agent=/);
+});
+
 test("without a stored sign-in the user is told how to proceed", async () => {
   const { root } = boundRepo();
   const { code, stderr } = await runNode(CONNECT, { args: ["set-agent"], cwd: root, env: OFFLINE });

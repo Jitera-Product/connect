@@ -1,8 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
-import { isExpired, loadCliSession, saveCliSession, sessionPath } from "../src/cli-session.ts";
+import {
+  isExpired,
+  loadCliSession,
+  saveCliSession,
+  sessionPath,
+  transportFor,
+} from "../src/cli-session.ts";
 import { isolatedTmpdir } from "./helpers.ts";
 
 function env(): NodeJS.ProcessEnv {
@@ -60,4 +67,68 @@ test("expiry honours the safety margin", () => {
 test("a session without expiry never counts as expired", () => {
   const { expiresAt: _dropped, ...rest } = SESSION;
   assert.equal(isExpired(rest, Number.MAX_SAFE_INTEGER), false);
+});
+
+test("a live session is used without refreshing", async () => {
+  const dir = isolatedTmpdir();
+  const env = { JITERA_CONNECT_CONFIG_DIR: dir } as NodeJS.ProcessEnv;
+  let refreshed = false;
+  const transport = await transportFor(
+    { automationUrl: "https://a", accessToken: "live", expiresAt: Date.now() + 3_600_000 },
+    async () => {
+      refreshed = true;
+      return { accessToken: "new" };
+    }
+  );
+
+  assert.equal(transport.accessToken, "live");
+  assert.equal(refreshed, false, "a valid token must not be spent on a refresh");
+  assert.ok(env);
+});
+
+test("an expired session is refreshed and the new token persisted", async () => {
+  const dir = isolatedTmpdir();
+  process.env["JITERA_CONNECT_CONFIG_DIR"] = dir;
+  try {
+    const transport = await transportFor(
+      {
+        automationUrl: "https://a",
+        accessToken: "stale",
+        refreshToken: "r1",
+        expiresAt: Date.now() - 1000,
+      },
+      async () => ({ accessToken: "fresh", refreshToken: "r2", expiresInSeconds: 3600 })
+    );
+
+    assert.equal(transport.accessToken, "fresh");
+    const saved = loadCliSession({ JITERA_CONNECT_CONFIG_DIR: dir } as NodeJS.ProcessEnv);
+    assert.equal(saved?.accessToken, "fresh");
+    assert.equal(saved?.refreshToken, "r2");
+  } finally {
+    delete process.env["JITERA_CONNECT_CONFIG_DIR"];
+  }
+});
+
+test("the refreshed session file stays private", async () => {
+  const dir = isolatedTmpdir();
+  process.env["JITERA_CONNECT_CONFIG_DIR"] = dir;
+  try {
+    await transportFor(
+      { automationUrl: "https://a", accessToken: "stale", refreshToken: "r1", expiresAt: 0 },
+      async () => ({ accessToken: "fresh" })
+    );
+    const mode = statSync(join(dir, "session.json")).mode & 0o777;
+    assert.equal(mode, 0o600, "a refresh must not widen the token file");
+  } finally {
+    delete process.env["JITERA_CONNECT_CONFIG_DIR"];
+  }
+});
+
+test("an expired session with no refresh token says to sign in again", async () => {
+  await assert.rejects(
+    transportFor({ automationUrl: "https://a", accessToken: "stale", expiresAt: 0 }, async () => {
+      throw new Error("must not be called");
+    }),
+    /Run login again/
+  );
 });

@@ -309,14 +309,14 @@ test("agents are read from the published workflows of one project", async () => 
   });
 
   const original = globalThis.fetch;
-  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-    const body = JSON.parse(String(init?.body)) as {
+  globalThis.fetch = async (...args: Parameters<typeof fetch>) => {
+    const body = JSON.parse(String(args[1]?.body)) as {
       query: string;
       variables: Record<string, unknown>;
     };
     document = body.query;
     variables = body.variables;
-    return original(input, init);
+    return original(...args);
   };
 
   const agents = await listAgents(

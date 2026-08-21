@@ -126,7 +126,13 @@ try {
 }
 
 if (agents.length === 0) {
-  fail("this project has no published agents yet, so there is nothing to choose.");
+  // An empty list is also what the server returns when the policy scope hides
+  // every agent, so name both causes rather than assert the wrong one.
+  fail(
+    "no published agents came back for this project. Either it has none yet, or " +
+      "your account cannot see them. Check the project in the studio, or pass " +
+      "--agent=<id> if you know the id."
+  );
 }
 
 const already = new Set(marker.agents ?? []);
