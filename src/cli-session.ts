@@ -81,9 +81,11 @@ export async function transportFor(
     ...session,
     accessToken: refreshed.accessToken,
     refreshToken: refreshed.refreshToken ?? session.refreshToken,
-    ...(refreshed.expiresInSeconds
-      ? { expiresAt: now + refreshed.expiresInSeconds * 1000 }
-      : {}),
+    // Without a new expiry, drop the old one rather than keep a timestamp that
+    // is already in the past and would force a refresh on every command.
+    expiresAt: refreshed.expiresInSeconds
+      ? now + refreshed.expiresInSeconds * 1000
+      : undefined,
   });
 
   return { automationUrl: session.automationUrl, accessToken: refreshed.accessToken };

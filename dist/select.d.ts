@@ -8,6 +8,10 @@ export declare class InvalidChoiceError extends Error {
     readonly answer: string;
     constructor(answer: string);
 }
+export declare class NoInputError extends Error {
+    readonly name = "NoInputError";
+    constructor();
+}
 export declare function chooseFrom<T>({ items, prompt, label, theme, }: {
     readonly items: readonly T[];
     readonly prompt: string;
@@ -35,8 +39,10 @@ export interface SelectOptions<T> {
 export declare function interactiveSelect<T>({ items, prompt, label, theme, input, output }: SelectOptions<T>): Promise<T>;
 export interface MultiSelectOptions<T> extends SelectOptions<T> {
     readonly selected?: (item: T) => boolean;
+    readonly viewport?: number;
+    readonly columns?: number;
 }
-export declare function multiSelect<T>({ items, prompt, label, theme, input, output, selected, }: MultiSelectOptions<T>): Promise<T[]>;
+export declare function multiSelect<T>({ items, prompt, label, theme, input, output, selected, viewport, columns, }: MultiSelectOptions<T>): Promise<T[]>;
 export declare function chooseManyFrom<T>({ items, prompt, label, theme, selected, }: {
     readonly items: readonly T[];
     readonly prompt: string;

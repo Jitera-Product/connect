@@ -13,6 +13,26 @@ export class InvalidChoiceError extends Error {
         this.answer = answer;
     }
 }
+export class NoInputError extends Error {
+    name = "NoInputError";
+    constructor() {
+        super("no answer was given and there is no terminal to ask on");
+    }
+}
+// `rl.question` never settles when stdin is already at EOF, which left a
+// scripted run hanging until the process exited with nothing saved.
+async function ask(prompt) {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+        return await new Promise((resolve, reject) => {
+            rl.once("close", () => reject(new NoInputError()));
+            void rl.question(prompt).then(resolve, reject);
+        }).then((answer) => answer.trim());
+    }
+    finally {
+        rl.close();
+    }
+}
 // Arrow-key selection on a terminal, a numbered prompt everywhere else.
 export async function chooseFrom({ items, prompt, label, theme, }) {
     if (process.stdin.isTTY && process.stdout.isTTY) {
@@ -29,9 +49,7 @@ export async function chooseFrom({ items, prompt, label, theme, }) {
     items.forEach((item, index) => {
         process.stdout.write(`    ${theme.accent(String(index + 1).padStart(2))}  ${label(item)}\n`);
     });
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const answer = (await rl.question(`\n  ${theme.dim(`Number [1-${items.length}]`)} `)).trim();
-    rl.close();
+    const answer = await ask(`\n  ${theme.dim(`Number [1-${items.length}]`)} `);
     const picked = items[Number(answer) - 1];
     if (!picked)
         throw new InvalidChoiceError(answer);
@@ -127,37 +145,61 @@ function parseMultiKey(sequence) {
     }
     return { kind: "none" };
 }
+// Rows are redrawn by moving the cursor up a fixed number of lines, so every
+// row has to occupy exactly one line. Agent descriptions are free text from the
+// studio, so they are flattened and cut to the terminal width.
+function oneLine(text, width) {
+    const flat = text.replace(/\s+/g, " ").trim();
+    return flat.length <= width ? flat : `${flat.slice(0, Math.max(1, width - 1))}…`;
+}
 // Checkbox selection: space toggles, enter confirms. Returns the ticked items,
 // which may legitimately be none — "none" means "do not narrow", and the
 // caller decides what that implies.
-export function multiSelect({ items, prompt, label, theme, input, output, selected, }) {
+export function multiSelect({ items, prompt, label, theme, input, output, selected, viewport, columns, }) {
     if (items.length === 0) {
         return Promise.reject(new Error("there is nothing to select from"));
     }
+    const width = Math.max(20, (columns ?? process.stdout.columns ?? 80) - 8);
+    // Leave room for the blank line, the prompt, the blank line and the footer.
+    const rows = Math.max(1, Math.min(items.length, viewport ?? Math.max(1, (process.stdout.rows ?? 24) - 5)));
+    const windowed = rows < items.length;
+    const painted = windowed ? rows + 1 : rows;
     return new Promise((resolve, reject) => {
         let highlighted = 0;
+        let top = 0;
         const ticked = items.map((item) => (selected ? selected(item) : false));
         const row = (index) => {
             const box = ticked[index] ? theme.ok("[x]") : theme.dim("[ ]");
-            const text = label(items[index]);
+            const text = oneLine(label(items[index]), width);
             return index === highlighted
                 ? `  ${theme.accent("❯")} ${box} ${theme.bold(text)}`
                 : `    ${box} ${text}`;
         };
+        const scroll = () => {
+            if (highlighted < top)
+                top = highlighted;
+            else if (highlighted >= top + rows)
+                top = highlighted - rows + 1;
+            top = Math.max(0, Math.min(top, items.length - rows));
+        };
         const paintItems = () => {
-            for (let index = 0; index < items.length; index += 1) {
-                output.write(`\r\u001b[2K${row(index)}\n`);
+            scroll();
+            for (let offset = 0; offset < rows; offset += 1) {
+                output.write(`\r\u001b[2K${row(top + offset)}\n`);
+            }
+            if (windowed) {
+                output.write(`\r\u001b[2K    ${theme.dim(`${highlighted + 1}/${items.length}`)}\n`);
             }
         };
         const repaint = () => {
-            output.write(`\u001b[${items.length}A`);
+            output.write(`\u001b[${painted}A`);
             paintItems();
         };
         const finish = () => {
             input.off("data", onData);
             input.setRawMode?.(false);
             input.pause?.();
-            output.write(`\u001b[${items.length + 3}A\r\u001b[J`);
+            output.write(`\u001b[${painted + 3}A\r\u001b[J`);
             output.write("\u001b[?25h");
         };
         const onData = (chunk) => {
@@ -213,9 +255,7 @@ export async function chooseManyFrom({ items, prompt, label, theme, selected, })
         const mark = selected?.(item) ? theme.ok("x") : " ";
         process.stdout.write(`    ${theme.accent(String(index + 1).padStart(2))} [${mark}] ${label(item)}\n`);
     });
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const answer = (await rl.question(`\n  ${theme.dim(`Numbers, comma separated, or blank for all [1-${items.length}]`)} `)).trim();
-    rl.close();
+    const answer = await ask(`\n  ${theme.dim(`Numbers, comma separated, or blank for all [1-${items.length}]`)} `);
     if (!answer)
         return [];
     const picked = [];

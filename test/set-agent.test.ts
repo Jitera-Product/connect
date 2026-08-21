@@ -160,3 +160,66 @@ test("the selection preserves the rest of the marker", async () => {
   assert.equal(marker["environment"], "studio-06");
   assert.equal(marker["project"], "p1");
 });
+
+test("--agent= with no id is refused rather than written as a blank", async () => {
+  // It used to write `"agents": [""]`, which reads back as no selection while
+  // the command claimed to have recorded one.
+  const { root } = boundRepo();
+  const { code, stderr } = await runNode(CONNECT, {
+    args: ["set-agent", "--agent="],
+    cwd: root,
+    env: OFFLINE,
+  });
+
+  assert.equal(code, 2);
+  assert.match(stderr, /needs an id/);
+  assert.ok(!("agents" in markerIn(root)));
+});
+
+test("--all and --agent together are refused rather than one winning silently", async () => {
+  const { root } = boundRepo();
+  const { code, stderr } = await runNode(CONNECT, {
+    args: ["set-agent", "--all", "--agent=a1"],
+    cwd: root,
+    env: OFFLINE,
+  });
+
+  assert.equal(code, 2);
+  assert.match(stderr, /contradictory/);
+});
+
+test("repeated ids are recorded once", async () => {
+  const { root } = boundRepo();
+  await runNode(CONNECT, {
+    args: ["set-agent", "--agent=a1", "--agent=a1", "--agent=a2"],
+    cwd: root,
+    env: OFFLINE,
+  });
+  assert.deepEqual(markerIn(root)["agents"], ["a1", "a2"]);
+});
+
+test("padded ids are trimmed before they are written", async () => {
+  const { root } = boundRepo();
+  await runNode(CONNECT, { args: ["set-agent", "--agent=  a1  "], cwd: root, env: OFFLINE });
+
+  // A padded id matches no partition server-side, so recall would silently
+  // return only project-wide memory.
+  assert.deepEqual(markerIn(root)["agents"], ["a1"]);
+});
+
+test("an unwritable marker reports the reason instead of a stack trace", async () => {
+  const { root } = boundRepo();
+  const { chmodSync } = await import("node:fs");
+  chmodSync(join(root, ".jitera.json"), 0o444);
+
+  const { code, stderr } = await runNode(CONNECT, {
+    args: ["set-agent", "--agent=a1"],
+    cwd: root,
+    env: OFFLINE,
+  });
+  chmodSync(join(root, ".jitera.json"), 0o644);
+
+  assert.notEqual(code, 0);
+  assert.match(stderr, /could not write \.jitera\.json/);
+  assert.ok(!/at .*writeFileSync/.test(stderr), "no stack trace");
+});

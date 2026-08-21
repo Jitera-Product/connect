@@ -192,10 +192,13 @@ export interface AgentSummary {
 
 // `status: published` matches what the studio lists: draft workflows are not
 // agents anyone is working with yet.
-const AGENTS_DOCUMENT = `query ConnectAgents($projectUuid: String!) {
+const AGENTS_PAGE_SIZE = 200;
+
+const AGENTS_DOCUMENT = `query ConnectAgents($projectUuid: String!, $limit: Int!) {
   boostWorkflows(
     where: { projectUuid: { _eq: $projectUuid }, status: { _eq: "published" } }
     orderBy: [{ createdAt: DESC_NULLS_LAST }]
+    limit: $limit
   ) {
     id
     name
@@ -218,7 +221,7 @@ export async function listAgents(
   const data = await query<AgentsResponse>(
     "ConnectAgents",
     AGENTS_DOCUMENT,
-    { projectUuid },
+    { projectUuid, limit: AGENTS_PAGE_SIZE },
     transport
   );
 

@@ -107,10 +107,12 @@ export async function listProjects(transport, organisation) {
 }
 // `status: published` matches what the studio lists: draft workflows are not
 // agents anyone is working with yet.
-const AGENTS_DOCUMENT = `query ConnectAgents($projectUuid: String!) {
+const AGENTS_PAGE_SIZE = 200;
+const AGENTS_DOCUMENT = `query ConnectAgents($projectUuid: String!, $limit: Int!) {
   boostWorkflows(
     where: { projectUuid: { _eq: $projectUuid }, status: { _eq: "published" } }
     orderBy: [{ createdAt: DESC_NULLS_LAST }]
+    limit: $limit
   ) {
     id
     name
@@ -118,7 +120,7 @@ const AGENTS_DOCUMENT = `query ConnectAgents($projectUuid: String!) {
   }
 }`;
 export async function listAgents(transport, projectUuid) {
-    const data = await query("ConnectAgents", AGENTS_DOCUMENT, { projectUuid }, transport);
+    const data = await query("ConnectAgents", AGENTS_DOCUMENT, { projectUuid, limit: AGENTS_PAGE_SIZE }, transport);
     return (data.boostWorkflows ?? [])
         .filter((row) => typeof row?.id === "string" && row.id.length > 0)
         .map((row) => ({

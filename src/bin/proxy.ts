@@ -41,7 +41,7 @@ await runProxy(
     apiKey: config.apiKey,
     instructions: loadInstructions(config.brand),
     projectUuid: resolveProjectUuid(process.env),
-    agents: resolveAgents(process.cwd()),
+    agents: resolveAgents(process.cwd(), process.env),
   },
   { input: process.stdin, output: process.stdout, log: process.stderr }
 );

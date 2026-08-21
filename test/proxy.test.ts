@@ -7,6 +7,7 @@ import {
   configFromEnvironment,
   resolveProjectUuid,
   runProxy,
+  resolveAgents,
   withAgentSelection,
   type ProxyConfig,
 } from "../src/proxy.ts";
@@ -316,4 +317,49 @@ test("no selection changes nothing", () => {
 test("non tool-call traffic passes straight through", () => {
   const request = { jsonrpc: "2.0" as const, id: 2, method: "tools/list" };
   assert.equal(withAgentSelection(request, ["a1"]), request);
+});
+
+test("a project override drops the repository's agent ids with it", async () => {
+  const { writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { isolatedTmpdir } = await import("./helpers.ts");
+
+  const dir = isolatedTmpdir();
+  writeFileSync(
+    join(dir, ".jitera.json"),
+    JSON.stringify({ project: "repo-project", agents: ["a1"] }),
+    "utf8"
+  );
+
+  assert.deepEqual(resolveAgents(dir, {} as NodeJS.ProcessEnv), ["a1"]);
+  // Agent ids belong to the project they were chosen in. Sending them with a
+  // different project matches nothing and empties the recall silently.
+  assert.equal(
+    resolveAgents(dir, { JITERA_PROJECT: "other-project" } as NodeJS.ProcessEnv),
+    undefined
+  );
+});
+
+test("a malformed arguments payload is forwarded rather than thrown on", () => {
+  for (const bad of ["a string", [1, 2, 3]]) {
+    const request = {
+      jsonrpc: "2.0" as const,
+      id: 3,
+      method: "tools/call",
+      params: { name: "recall_jitera_memory", arguments: bad },
+    };
+    assert.equal(withAgentSelection(request, ["a1"]), request, `${JSON.stringify(bad)}`);
+  }
+});
+
+test("a call with no arguments at all still gets the selection", () => {
+  const request = {
+    jsonrpc: "2.0" as const,
+    id: 4,
+    method: "tools/call",
+    params: { name: "recall_jitera_memory" },
+  };
+  const out = withAgentSelection(request, ["a1"]);
+  const params = out.params as { arguments: Record<string, unknown> };
+  assert.deepEqual(params.arguments["agents"], ["a1"]);
 });

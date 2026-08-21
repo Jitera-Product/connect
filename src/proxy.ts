@@ -32,7 +32,16 @@ export function resolveProjectUuid(
   return readProjectMarker(cwd)?.project;
 }
 
-export function resolveAgents(cwd: string): readonly string[] | undefined {
+export function resolveAgents(
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env
+): readonly string[] | undefined {
+  // JITERA_PROJECT overrides which project the proxy talks to, and agent ids
+  // belong to the project they were chosen in. Sending this repository's ids
+  // alongside someone else's project matches nothing and quietly empties the
+  // recall, so the override drops the selection with it.
+  if (env["JITERA_PROJECT"]) return undefined;
+
   const agents = readProjectMarker(cwd)?.agents;
   return agents && agents.length > 0 ? agents : undefined;
 }
@@ -55,12 +64,17 @@ export function withAgentSelection(
 
   // A caller that named agents itself has been more specific than the
   // repository default, so leave it alone.
-  const args = params.arguments ?? {};
-  if ("agents" in args) return request;
+  const args = params.arguments;
+  if (args !== undefined && (typeof args !== "object" || Array.isArray(args))) {
+    // Not a valid MCP argument object; forwarding it unchanged lets the server
+    // reject it rather than this throwing on a property test.
+    return request;
+  }
+  if (args && "agents" in args) return request;
 
   return {
     ...request,
-    params: { ...params, arguments: { ...args, agents: [...agents] } },
+    params: { ...params, arguments: { ...(args ?? {}), agents: [...agents] } },
   };
 }
 

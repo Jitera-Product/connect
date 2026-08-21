@@ -6,11 +6,17 @@ import { DeviceFlowError, refreshAccessToken } from "../device-flow.ts";
 import { GraphqlError, listAgents, type AgentSummary } from "../graphql.ts";
 import { resolveGitRoot } from "../install/project-root.ts";
 import { readProjectMarker, writeProjectMarker } from "../project-marker.ts";
-import { InvalidChoiceError, SelectCancelledError, chooseManyFrom } from "../select.ts";
+import {
+  InvalidChoiceError,
+  NoInputError,
+  SelectCancelledError,
+  chooseManyFrom,
+} from "../select.ts";
 import { createTheme } from "../theme.ts";
 
 interface Args {
   agents: string[];
+  blankAgent?: boolean;
   all: boolean;
   dryRun: boolean;
   help: boolean;
@@ -34,7 +40,11 @@ function parseArgs(argv: readonly string[]): Args {
   const args: Args = { agents: [], all: false, dryRun: false, help: false };
   for (const arg of argv) {
     if (arg === "set-agent") continue;
-    else if (arg.startsWith("--agent=")) args.agents.push(arg.slice("--agent=".length));
+    else if (arg.startsWith("--agent=")) {
+      const id = arg.slice("--agent=".length).trim();
+      if (id && !args.agents.includes(id)) args.agents.push(id);
+      else if (!id) args.blankAgent = true;
+    }
     else if (arg === "--all") args.all = true;
     else if (arg === "--dry-run") args.dryRun = true;
     else if (arg === "--help" || arg === "-h") args.help = true;
@@ -60,6 +70,16 @@ if (args.unknown) {
   process.stderr.write(`error: unrecognised argument "${args.unknown}"\n${USAGE}\n`);
   process.exit(2);
 }
+if (args.blankAgent && args.agents.length === 0) {
+  // Otherwise this wrote `"agents": [""]`, which reads back as no selection at
+  // all while the command claimed to have recorded one.
+  process.stderr.write(`error: --agent= needs an id\n${USAGE}\n`);
+  process.exit(2);
+}
+if (args.all && args.agents.length > 0) {
+  process.stderr.write(`error: --all and --agent are contradictory\n${USAGE}\n`);
+  process.exit(2);
+}
 
 const projectRoot = resolveGitRoot(process.cwd());
 if (!projectRoot) {
@@ -78,7 +98,12 @@ if (!marker?.project) {
 }
 
 function save(ids: readonly string[], names?: readonly string[]): never {
-  const written = writeProjectMarker(projectRoot as string, { agents: ids }, args.dryRun);
+  let written;
+  try {
+    written = writeProjectMarker(projectRoot as string, { agents: ids }, args.dryRun);
+  } catch (error) {
+    fail(`could not write .jitera.json: ${(error as Error).message}`);
+  }
   const verb = args.dryRun ? "would record" : "recorded";
 
   if (ids.length === 0) {
@@ -149,6 +174,9 @@ try {
 } catch (error) {
   if (error instanceof SelectCancelledError) fail("cancelled.", 130);
   if (error instanceof InvalidChoiceError) fail(error.message, 2);
+  if (error instanceof NoInputError) {
+    fail("nothing to read the answer from. Pass --agent=<id> or --all instead.", 2);
+  }
   throw error;
 }
 

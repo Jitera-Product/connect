@@ -6,7 +6,7 @@ import { DeviceFlowError, refreshAccessToken } from "../device-flow.js";
 import { GraphqlError, listAgents } from "../graphql.js";
 import { resolveGitRoot } from "../install/project-root.js";
 import { readProjectMarker, writeProjectMarker } from "../project-marker.js";
-import { InvalidChoiceError, SelectCancelledError, chooseManyFrom } from "../select.js";
+import { InvalidChoiceError, NoInputError, SelectCancelledError, chooseManyFrom, } from "../select.js";
 import { createTheme } from "../theme.js";
 const USAGE = [
     "usage: npx @jitera/connect set-agent [--agent=<id>]... [--all] [--dry-run]",
@@ -25,8 +25,13 @@ function parseArgs(argv) {
     for (const arg of argv) {
         if (arg === "set-agent")
             continue;
-        else if (arg.startsWith("--agent="))
-            args.agents.push(arg.slice("--agent=".length));
+        else if (arg.startsWith("--agent=")) {
+            const id = arg.slice("--agent=".length).trim();
+            if (id && !args.agents.includes(id))
+                args.agents.push(id);
+            else if (!id)
+                args.blankAgent = true;
+        }
         else if (arg === "--all")
             args.all = true;
         else if (arg === "--dry-run")
@@ -52,6 +57,16 @@ if (args.unknown) {
     process.stderr.write(`error: unrecognised argument "${args.unknown}"\n${USAGE}\n`);
     process.exit(2);
 }
+if (args.blankAgent && args.agents.length === 0) {
+    // Otherwise this wrote `"agents": [""]`, which reads back as no selection at
+    // all while the command claimed to have recorded one.
+    process.stderr.write(`error: --agent= needs an id\n${USAGE}\n`);
+    process.exit(2);
+}
+if (args.all && args.agents.length > 0) {
+    process.stderr.write(`error: --all and --agent are contradictory\n${USAGE}\n`);
+    process.exit(2);
+}
 const projectRoot = resolveGitRoot(process.cwd());
 if (!projectRoot) {
     fail("this is not a git repository, and the binding belongs at a repository root.", 2);
@@ -65,7 +80,13 @@ if (!marker?.project) {
         : "this repository is not bound to a project yet. Run: npx @jitera/connect init");
 }
 function save(ids, names) {
-    const written = writeProjectMarker(projectRoot, { agents: ids }, args.dryRun);
+    let written;
+    try {
+        written = writeProjectMarker(projectRoot, { agents: ids }, args.dryRun);
+    }
+    catch (error) {
+        fail(`could not write .jitera.json: ${error.message}`);
+    }
     const verb = args.dryRun ? "would record" : "recorded";
     if (ids.length === 0) {
         process.stdout.write(`\n  ${theme.ok("✓")} ${verb} ${theme.bold("every agent")} ${theme.dim(`in ${written.path}`)}\n`);
@@ -129,6 +150,9 @@ catch (error) {
         fail("cancelled.", 130);
     if (error instanceof InvalidChoiceError)
         fail(error.message, 2);
+    if (error instanceof NoInputError) {
+        fail("nothing to read the answer from. Pass --agent=<id> or --all instead.", 2);
+    }
     throw error;
 }
 if (chosen.length === 0) {

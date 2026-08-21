@@ -4,6 +4,9 @@ export const MARKER_FILENAME = ".jitera.json";
 // Environments are studio, studio-stage, studio-NN. Anything else in the file
 // is not echoed back into session context.
 const SAFE_ENVIRONMENT = /^[A-Za-z0-9-]{1,64}$/;
+// A committed marker is editable by hand, and every selected id becomes a
+// clause in the server's filter, so the list is bounded rather than trusted.
+const MAX_AGENTS = 100;
 export function readProjectMarker(startDir) {
     let dir = startDir;
     for (;;) {
@@ -26,8 +29,15 @@ export function readProjectMarker(startDir) {
             const environment = fields["environment"];
             const project = fields["project"];
             const agents = fields["agents"];
+            // Trimmed and de-duplicated: an id with stray whitespace matches no
+            // partition on the server and would silently narrow recall to nothing.
             const agentIds = Array.isArray(agents)
-                ? agents.filter((id) => typeof id === "string" && id.trim() !== "")
+                ? [
+                    ...new Set(agents
+                        .filter((id) => typeof id === "string")
+                        .map((id) => id.trim())
+                        .filter((id) => id !== "")),
+                ].slice(0, MAX_AGENTS)
                 : undefined;
             return {
                 path,
@@ -70,8 +80,11 @@ export function writeProjectMarker(root, marker, dryRun = false) {
     // An empty list is a real choice - "read every agent" - and has to erase a
     // previous selection rather than be mistaken for "leave it alone".
     if (marker.agents) {
-        if (marker.agents.length > 0)
-            next["agents"] = [...marker.agents];
+        const ids = [
+            ...new Set(marker.agents.map((id) => id.trim()).filter((id) => id !== "")),
+        ].slice(0, MAX_AGENTS);
+        if (ids.length > 0)
+            next["agents"] = ids;
         else
             delete next["agents"];
     }

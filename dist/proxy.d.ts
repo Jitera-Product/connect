@@ -12,7 +12,7 @@ export interface ProxyConfig {
     readonly agents?: readonly string[] | undefined;
 }
 export declare function resolveProjectUuid(env: NodeJS.ProcessEnv, cwd?: string): string | undefined;
-export declare function resolveAgents(cwd: string): readonly string[] | undefined;
+export declare function resolveAgents(cwd: string, env?: NodeJS.ProcessEnv): readonly string[] | undefined;
 export declare function withAgentSelection(request: JsonRpcRequest, agents: readonly string[] | undefined): JsonRpcRequest;
 export declare function runProxy({ url, apiKey, instructions, projectUuid, agents }: ProxyConfig, { input, output, log }: ProxyStreams): Promise<void>;
 export interface ProxyEnvironment extends ProxyConfig {
