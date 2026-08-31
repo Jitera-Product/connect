@@ -13,6 +13,7 @@ import {
   chooseManyFrom,
 } from "../select.ts";
 import { createTheme } from "../theme.ts";
+import { endWith, runCommand } from "../exit.ts";
 
 interface Args {
   agents: string[];
@@ -57,136 +58,138 @@ const theme = createTheme({ env: process.env, isTty: Boolean(process.stdout.isTT
 
 function fail(message: string, code = 1): never {
   process.stderr.write(`\n  ${theme.err("error")}  ${message}\n`);
-  process.exit(code);
+  endWith(code);
 }
 
-const args = parseArgs(process.argv.slice(2));
+await runCommand(async () => {
+  const args = parseArgs(process.argv.slice(2));
 
-if (args.help) {
-  process.stdout.write(`${USAGE}\n`);
-  process.exit(0);
-}
-if (args.unknown) {
-  process.stderr.write(`error: unrecognised argument "${args.unknown}"\n${USAGE}\n`);
-  process.exit(2);
-}
-if (args.blankAgent && args.agents.length === 0) {
-  // Otherwise this wrote `"agents": [""]`, which reads back as no selection at
-  // all while the command claimed to have recorded one.
-  process.stderr.write(`error: --agent= needs an id\n${USAGE}\n`);
-  process.exit(2);
-}
-if (args.all && args.agents.length > 0) {
-  process.stderr.write(`error: --all and --agent are contradictory\n${USAGE}\n`);
-  process.exit(2);
-}
+  if (args.help) {
+    process.stdout.write(`${USAGE}\n`);
+    endWith(0);
+  }
+  if (args.unknown) {
+    process.stderr.write(`error: unrecognised argument "${args.unknown}"\n${USAGE}\n`);
+    endWith(2);
+  }
+  if (args.blankAgent && args.agents.length === 0) {
+    // Otherwise this wrote `"agents": [""]`, which reads back as no selection at
+    // all while the command claimed to have recorded one.
+    process.stderr.write(`error: --agent= needs an id\n${USAGE}\n`);
+    endWith(2);
+  }
+  if (args.all && args.agents.length > 0) {
+    process.stderr.write(`error: --all and --agent are contradictory\n${USAGE}\n`);
+    endWith(2);
+  }
 
-const projectRoot = resolveGitRoot(process.cwd());
-if (!projectRoot) {
-  fail("this is not a git repository, and the binding belongs at a repository root.", 2);
-}
+  const projectRoot = resolveGitRoot(process.cwd());
+  if (!projectRoot) {
+    fail("this is not a git repository, and the binding belongs at a repository root.", 2);
+  }
 
-// The selection lives beside the project binding, so there has to be one.
-const marker = readProjectMarker(projectRoot);
-if (!marker?.project) {
-  fail(
-    marker
-      ? "this repository's .jitera.json records no project, so there are no agents to choose from. " +
-          "Run: npx @jitera/connect init --project=<uuid>"
-      : "this repository is not bound to a project yet. Run: npx @jitera/connect init"
-  );
-}
+  // The selection lives beside the project binding, so there has to be one.
+  const marker = readProjectMarker(projectRoot);
+  if (!marker?.project) {
+    fail(
+      marker
+        ? "this repository's .jitera.json records no project, so there are no agents to choose from. " +
+            "Run: npx @jitera/connect init --project=<uuid>"
+        : "this repository is not bound to a project yet. Run: npx @jitera/connect init"
+    );
+  }
 
-function save(ids: readonly string[], names?: readonly string[]): never {
-  let written;
+  function save(ids: readonly string[], names?: readonly string[]): never {
+    let written;
+    try {
+      written = writeProjectMarker(projectRoot as string, { agents: ids }, args.dryRun);
+    } catch (error) {
+      fail(`could not write .jitera.json: ${(error as Error).message}`);
+    }
+    const verb = args.dryRun ? "would record" : "recorded";
+
+    if (ids.length === 0) {
+      process.stdout.write(
+        `\n  ${theme.ok("✓")} ${verb} ${theme.bold("every agent")} ${theme.dim(`in ${written.path}`)}\n`
+      );
+    } else {
+      process.stdout.write(
+        `\n  ${theme.ok("✓")} ${verb} ${theme.bold(`${ids.length} agent(s)`)} ${theme.dim(`in ${written.path}`)}\n`
+      );
+      for (const name of names ?? ids) process.stdout.write(`    ${theme.dim("·")} ${name}\n`);
+    }
+    if (!written.changed) {
+      process.stdout.write(`  ${theme.dim("nothing changed")}\n`);
+    }
+    endWith(0);
+  }
+
+  if (args.all) save([]);
+  if (args.agents.length > 0) save(args.agents);
+
+  const session = loadCliSession();
+  if (!session) {
+    fail(
+      "no stored sign-in, so the agents cannot be listed. Run `npx @jitera/connect login`, " +
+        "or pass --agent=<id> if you already know the ids."
+    );
+  }
+
+  let agents: AgentSummary[];
   try {
-    written = writeProjectMarker(projectRoot as string, { agents: ids }, args.dryRun);
+    const transport = await transportFor(session, refreshAccessToken);
+    agents = await listAgents(transport, marker.project as string);
   } catch (error) {
-    fail(`could not write .jitera.json: ${(error as Error).message}`);
+    if (error instanceof UnknownEnvironmentError) fail(error.message, 2);
+    if (
+      error instanceof DiscoveryError ||
+      error instanceof DeviceFlowError ||
+      error instanceof GraphqlError
+    ) {
+      fail(`${error.message} Pass --agent=<id> to set the selection without listing.`);
+    }
+    if (error instanceof Error) fail(error.message);
+    throw error;
   }
-  const verb = args.dryRun ? "would record" : "recorded";
 
-  if (ids.length === 0) {
-    process.stdout.write(
-      `\n  ${theme.ok("✓")} ${verb} ${theme.bold("every agent")} ${theme.dim(`in ${written.path}`)}\n`
+  if (agents.length === 0) {
+    // An empty list is also what the server returns when the policy scope hides
+    // every agent, so name both causes rather than assert the wrong one.
+    fail(
+      "no published agents came back for this project. Either it has none yet, or " +
+        "your account cannot see them. Check the project in the studio, or pass " +
+        "--agent=<id> if you know the id."
     );
-  } else {
+  }
+
+  const already = new Set(marker.agents ?? []);
+
+  let chosen: AgentSummary[];
+  try {
+    chosen = await chooseManyFrom({
+      items: agents,
+      prompt: "Which agents' memory should this repository read?",
+      label: (agent) => (agent.description ? `${agent.name} — ${agent.description}` : agent.name),
+      theme,
+      selected: (agent) => already.has(agent.id),
+    });
+  } catch (error) {
+    if (error instanceof SelectCancelledError) fail("cancelled.", 130);
+    if (error instanceof InvalidChoiceError) fail(error.message, 2);
+    if (error instanceof NoInputError) {
+      fail("nothing to read the answer from. Pass --agent=<id> or --all instead.", 2);
+    }
+    throw error;
+  }
+
+  if (chosen.length === 0) {
     process.stdout.write(
-      `\n  ${theme.ok("✓")} ${verb} ${theme.bold(`${ids.length} agent(s)`)} ${theme.dim(`in ${written.path}`)}\n`
+      `\n  ${theme.dim("nothing selected, so this repository reads every agent.")}\n`
     );
-    for (const name of names ?? ids) process.stdout.write(`    ${theme.dim("·")} ${name}\n`);
   }
-  if (!written.changed) {
-    process.stdout.write(`  ${theme.dim("nothing changed")}\n`);
-  }
-  process.exit(0);
-}
 
-if (args.all) save([]);
-if (args.agents.length > 0) save(args.agents);
-
-const session = loadCliSession();
-if (!session) {
-  fail(
-    "no stored sign-in, so the agents cannot be listed. Run `npx @jitera/connect login`, " +
-      "or pass --agent=<id> if you already know the ids."
+  save(
+    chosen.map((agent) => agent.id),
+    chosen.map((agent) => agent.name)
   );
-}
-
-let agents: AgentSummary[];
-try {
-  const transport = await transportFor(session, refreshAccessToken);
-  agents = await listAgents(transport, marker.project as string);
-} catch (error) {
-  if (error instanceof UnknownEnvironmentError) fail(error.message, 2);
-  if (
-    error instanceof DiscoveryError ||
-    error instanceof DeviceFlowError ||
-    error instanceof GraphqlError
-  ) {
-    fail(`${error.message} Pass --agent=<id> to set the selection without listing.`);
-  }
-  if (error instanceof Error) fail(error.message);
-  throw error;
-}
-
-if (agents.length === 0) {
-  // An empty list is also what the server returns when the policy scope hides
-  // every agent, so name both causes rather than assert the wrong one.
-  fail(
-    "no published agents came back for this project. Either it has none yet, or " +
-      "your account cannot see them. Check the project in the studio, or pass " +
-      "--agent=<id> if you know the id."
-  );
-}
-
-const already = new Set(marker.agents ?? []);
-
-let chosen: AgentSummary[];
-try {
-  chosen = await chooseManyFrom({
-    items: agents,
-    prompt: "Which agents' memory should this repository read?",
-    label: (agent) => (agent.description ? `${agent.name} — ${agent.description}` : agent.name),
-    theme,
-    selected: (agent) => already.has(agent.id),
-  });
-} catch (error) {
-  if (error instanceof SelectCancelledError) fail("cancelled.", 130);
-  if (error instanceof InvalidChoiceError) fail(error.message, 2);
-  if (error instanceof NoInputError) {
-    fail("nothing to read the answer from. Pass --agent=<id> or --all instead.", 2);
-  }
-  throw error;
-}
-
-if (chosen.length === 0) {
-  process.stdout.write(
-    `\n  ${theme.dim("nothing selected, so this repository reads every agent.")}\n`
-  );
-}
-
-save(
-  chosen.map((agent) => agent.id),
-  chosen.map((agent) => agent.name)
-);
+});

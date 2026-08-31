@@ -373,3 +373,26 @@ test("piped output never fills up with spinner frames", async () => {
   assert.match(stdout, /Waiting for approval/);
   await server.close();
 });
+
+test("the printed key is labelled as a secret shown once", async () => {
+  // It reaches shell history, CI logs and screen recordings, and grants
+  // account-wide read + write until it is revoked.
+  const server = await replayServer({
+    userKeyResponse: {
+      data: {
+        createApiKey: { rawKey: "sk-user-key-1", errors: null, apiKey: { maskedKey: "sk-…er1" } },
+      },
+    },
+  });
+  const { stdout, code } = await runNode(LOGIN, {
+    env: { JITERA_AUTOMATION_URL: server.url },
+  });
+  await server.close();
+
+  assert.equal(code, 0, stdout);
+  assert.match(stdout, /secret/i);
+  assert.match(stdout, /shown once/i);
+  assert.match(stdout, /revoke/i);
+  assert.match(stdout, /account-wide read \+ write/i);
+  assert.match(stdout, /sk-user-key-1/, "the key itself is still available to copy");
+});

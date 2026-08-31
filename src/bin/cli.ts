@@ -61,130 +61,140 @@ const USAGE = [
   "  --mcp-url=<url>      bypass discovery, for air-gapped or self-hosted setups",
 ].join("\n");
 
-const args = parseArgs(process.argv.slice(2));
+// The body returns an exit code rather than calling process.exit(). Exiting
+// while a handle opened by discovery is still closing aborts the process on
+// Windows with a libuv assertion in async.c, so a command that had already
+// printed the right answer still reported a crash to its caller.
+async function main(): Promise<number> {
+  const args = parseArgs(process.argv.slice(2));
 
-if (args.help) {
-  process.stdout.write(`${USAGE}\n`);
-  process.exit(0);
-}
-
-if (args.unknown) {
-  process.stderr.write(`error: unrecognised argument "${args.unknown}"\n${USAGE}\n`);
-  process.exit(2);
-}
-
-let studioUrl: string;
-try {
-  studioUrl = resolveStudioUrl(args.environment);
-} catch (error) {
-  if (error instanceof UnknownEnvironmentError) {
-    process.stderr.write(`error: ${error.message}\n`);
-    process.exit(2);
+  if (args.help) {
+    process.stdout.write(`${USAGE}\n`);
+    return 0;
   }
-  throw error;
-}
 
-let mcpUrl: string;
-let apiBaseUrl: string;
-let brand: string;
-if (args.mcpUrl) {
-  mcpUrl = args.mcpUrl;
-  apiBaseUrl = "";
-  brand = DEFAULT_BRAND;
-} else {
+  if (args.unknown) {
+    process.stderr.write(`error: unrecognised argument "${args.unknown}"\n${USAGE}\n`);
+    return 2;
+  }
+
+  let studioUrl: string;
   try {
-    const deployment = await discoverDeployment({ environment: args.environment, studioUrl: process.env["JITERA_STUDIO_URL"] });
-    mcpUrl = deployment.mcpUrl;
-    apiBaseUrl = deployment.apiBaseUrl;
-    brand = deployment.brand;
+    studioUrl = resolveStudioUrl(args.environment);
   } catch (error) {
-    if (error instanceof DiscoveryError) {
+    if (error instanceof UnknownEnvironmentError) {
       process.stderr.write(`error: ${error.message}\n`);
-      process.exit(1);
+      return 2;
     }
     throw error;
   }
-}
 
-if (args.print) {
-  process.stdout.write(`${JSON.stringify({ mcpUrl, apiBaseUrl, studioUrl }, undefined, 2)}\n`);
-  process.exit(0);
-}
-
-const context: AdapterContext = {
-  scope: args.scope,
-  home: homedir(),
-  cwd: process.cwd(),
-  mcpUrl,
-  // A committed .jitera.json pins these configs to the repo's project, which is
-  // what makes a user-level key work without per-project setup.
-  projectUuid: readProjectMarker(process.cwd())?.project,
-  dryRun: args.dryRun,
-};
-
-const detected = ADAPTERS.filter((adapter) => adapter.detect(context));
-
-if (detected.length === 0) {
-  process.stderr.write(
-    `error: no supported assistant detected. Looked for: ${ADAPTERS.map((a) => a.label).join(", ")}.\n` +
-      `Claude Code and Codex install through their own plugin marketplaces, see the readme.\n`
-  );
-  process.exit(1);
-}
-
-const results: { adapter: Adapter; result: ReturnType<Adapter["install"]> }[] = [];
-for (const adapter of detected) {
-  try {
-    results.push({
-      adapter,
-      result: args.uninstall ? adapter.uninstall(context) : adapter.install(context),
-    });
-  } catch (error) {
-    if (error instanceof MalformedConfigError) {
-      process.stderr.write(`error: ${error.message}\n`);
-      process.exit(1);
+  let mcpUrl: string;
+  let apiBaseUrl: string;
+  let brand: string;
+  if (args.mcpUrl) {
+    mcpUrl = args.mcpUrl;
+    apiBaseUrl = "";
+    brand = DEFAULT_BRAND;
+  } else {
+    try {
+      const deployment = await discoverDeployment({ environment: args.environment, studioUrl: process.env["JITERA_STUDIO_URL"] });
+      mcpUrl = deployment.mcpUrl;
+      apiBaseUrl = deployment.apiBaseUrl;
+      brand = deployment.brand;
+    } catch (error) {
+      if (error instanceof DiscoveryError) {
+        process.stderr.write(`error: ${error.message}\n`);
+        return 1;
+      }
+      throw error;
     }
-    throw error;
   }
+
+  if (args.print) {
+    process.stdout.write(`${JSON.stringify({ mcpUrl, apiBaseUrl, studioUrl }, undefined, 2)}\n`);
+    return 0;
+  }
+
+  const context: AdapterContext = {
+    scope: args.scope,
+    home: homedir(),
+    cwd: process.cwd(),
+    mcpUrl,
+    // A committed .jitera.json pins these configs to the repo's project, which is
+    // what makes a user-level key work without per-project setup.
+    projectUuid: readProjectMarker(process.cwd())?.project,
+    dryRun: args.dryRun,
+  };
+
+  const detected = ADAPTERS.filter((adapter) => adapter.detect(context));
+
+  if (detected.length === 0) {
+    process.stderr.write(
+      `error: no supported assistant detected. Looked for: ${ADAPTERS.map((a) => a.label).join(", ")}.\n` +
+        `Claude Code and Codex install through their own plugin marketplaces, see the readme.\n`
+    );
+    return 1;
+  }
+
+  const results: { adapter: Adapter; result: ReturnType<Adapter["install"]> }[] = [];
+  for (const adapter of detected) {
+    try {
+      results.push({
+        adapter,
+        result: args.uninstall ? adapter.uninstall(context) : adapter.install(context),
+      });
+    } catch (error) {
+      if (error instanceof MalformedConfigError) {
+        process.stderr.write(`error: ${error.message}\n`);
+        return 1;
+      }
+      throw error;
+    }
+  }
+
+  const theme = createTheme({ env: process.env, isTty: Boolean(process.stdout.isTTY) });
+  process.stdout.write(heading(theme, brand, args.uninstall ? "disconnect" : "connect"));
+
+  const verb = args.uninstall ? "removed from" : "written to";
+  for (const { adapter, result } of results) {
+    process.stdout.write(
+      `  ${result.changed ? theme.ok("✓") : theme.dim("–")} ${theme.bold(adapter.label)} ${theme.dim(
+        `${result.changed ? verb : "already up to date in"} ${result.path}`
+      )}\n`
+    );
+  }
+
+  if (!args.skipSkills) {
+    const values = { BRAND: brand };
+    const targetDirs = [...new Set(detected.flatMap((adapter) => adapter.skillsDirs(context)))];
+
+    const skills = args.uninstall
+      ? uninstallSkills({ packageRoot: PACKAGE_ROOT, targetDirs, dryRun: args.dryRun })
+      : installSkills({ packageRoot: PACKAGE_ROOT, targetDirs, values, dryRun: args.dryRun });
+
+    const skillVerb = args.uninstall ? "removed from" : "written to";
+    process.stdout.write(
+      skills.changed
+        ? `  ${theme.ok("✓")} ${theme.bold("Skills")} ${theme.dim(`${skills.skills.length} ${skillVerb} ${targetDirs.join(", ")}`)}\n`
+        : `  ${theme.dim("–")} ${theme.bold("Skills")} ${theme.dim(`already up to date in ${targetDirs.join(", ")}`)}\n`
+    );
+  }
+
+  if (args.dryRun) {
+    process.stdout.write(`\n  ${theme.dim("dry run, nothing was written")}\n`);
+  } else if (!args.uninstall) {
+    process.stdout.write(`\n  ${theme.dim("endpoint")}  ${theme.accent(mcpUrl)}\n`);
+    process.stdout.write(
+      `  ${theme.dim("export JITERA_API_KEY=<your api key> before starting your assistant")}\n`
+    );
+    process.stdout.write(
+      `  ${theme.dim("Optional:")} ${theme.accent("npx @jitera/connect init")} ` +
+        `${theme.dim("writes committable AGENTS.md instructions at the repo root")}\n`
+    );
+  }
+
+  return 0;
 }
 
-const theme = createTheme({ env: process.env, isTty: Boolean(process.stdout.isTTY) });
-process.stdout.write(heading(theme, brand, args.uninstall ? "disconnect" : "connect"));
-
-const verb = args.uninstall ? "removed from" : "written to";
-for (const { adapter, result } of results) {
-  process.stdout.write(
-    `  ${result.changed ? theme.ok("✓") : theme.dim("–")} ${theme.bold(adapter.label)} ${theme.dim(
-      `${result.changed ? verb : "already up to date in"} ${result.path}`
-    )}\n`
-  );
-}
-
-if (!args.skipSkills) {
-  const values = { BRAND: brand };
-  const targetDirs = [...new Set(detected.flatMap((adapter) => adapter.skillsDirs(context)))];
-
-  const skills = args.uninstall
-    ? uninstallSkills({ packageRoot: PACKAGE_ROOT, targetDirs, dryRun: args.dryRun })
-    : installSkills({ packageRoot: PACKAGE_ROOT, targetDirs, values, dryRun: args.dryRun });
-
-  const skillVerb = args.uninstall ? "removed from" : "written to";
-  process.stdout.write(
-    skills.changed
-      ? `  ${theme.ok("✓")} ${theme.bold("Skills")} ${theme.dim(`${skills.skills.length} ${skillVerb} ${targetDirs.join(", ")}`)}\n`
-      : `  ${theme.dim("–")} ${theme.bold("Skills")} ${theme.dim(`already up to date in ${targetDirs.join(", ")}`)}\n`
-  );
-}
-
-if (args.dryRun) {
-  process.stdout.write(`\n  ${theme.dim("dry run, nothing was written")}\n`);
-} else if (!args.uninstall) {
-  process.stdout.write(`\n  ${theme.dim("endpoint")}  ${theme.accent(mcpUrl)}\n`);
-  process.stdout.write(
-    `  ${theme.dim("export JITERA_API_KEY=<your api key> before starting your assistant")}\n`
-  );
-  process.stdout.write(
-    `  ${theme.dim("Optional:")} ${theme.accent("npx @jitera/connect init")} ` +
-      `${theme.dim("writes committable AGENTS.md instructions at the repo root")}\n`
-  );
-}
+process.exitCode = await main();

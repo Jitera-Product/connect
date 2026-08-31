@@ -15,6 +15,7 @@ import { cursor } from "../adapters/cursor.js";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { endWith, runCommand } from "../exit.js";
 const USAGE = [
     "usage: npx @jitera/connect login [--env=<environment>] [options]",
     "",
@@ -55,244 +56,253 @@ function parseArgs(argv) {
 const theme = createTheme({ env: process.env, isTty: Boolean(process.stdout.isTTY) });
 function fail(message, code = 1) {
     process.stderr.write(`\n  ${theme.err("error")}  ${message}\n`);
-    process.exit(code);
+    endWith(code);
 }
-const args = parseArgs(process.argv.slice(2));
-if (args.help) {
-    process.stdout.write(`${USAGE}\n`);
-    process.exit(0);
-}
-if (args.unknown) {
-    process.stderr.write(`error: unrecognised argument "${args.unknown}"\n${USAGE}\n`);
-    process.exit(2);
-}
-let automationUrl = process.env["JITERA_AUTOMATION_URL"] ?? "";
-let mcpUrl = process.env["JITERA_MCP_URL"] ?? "";
-let brand = "Jitera";
-if (!automationUrl) {
-    try {
-        const deployment = await discoverDeployment({
-            environment: args.environment,
-            studioUrl: process.env["JITERA_STUDIO_URL"],
-        });
-        automationUrl = deployment.automationUrl;
-        mcpUrl = mcpUrl || deployment.mcpUrl;
-        brand = deployment.brand;
+await runCommand(async () => {
+    const args = parseArgs(process.argv.slice(2));
+    if (args.help) {
+        process.stdout.write(`${USAGE}\n`);
+        endWith(0);
     }
-    catch (error) {
-        if (error instanceof UnknownEnvironmentError)
-            fail(error.message, 2);
-        if (error instanceof DiscoveryError)
-            fail(error.message);
-        throw error;
+    if (args.unknown) {
+        process.stderr.write(`error: unrecognised argument "${args.unknown}"\n${USAGE}\n`);
+        endWith(2);
     }
-}
-if (!automationUrl) {
-    fail("this deployment did not advertise an automation url, so sign-in cannot continue.");
-}
-let authorization;
-try {
-    authorization = await requestDeviceAuthorization({ automationUrl });
-}
-catch (error) {
-    if (error instanceof DeviceFlowError)
-        fail(error.message);
-    throw error;
-}
-const openUrl = authorization.verificationUriComplete ?? authorization.verificationUri;
-process.stdout.write(heading(theme, brand, "connect"));
-process.stdout.write(`\n  ${theme.dim("Sign in to authorise this device.")}\n\n`);
-process.stdout.write(`  ${theme.dim("Open")}  ${theme.accent(openUrl)}\n`);
-process.stdout.write(`  ${theme.dim("Code")}  ${theme.bold(authorization.userCode)}\n\n`);
-const spinner = startSpinner({
-    theme,
-    label: "Waiting for approval…",
-    write: (chunk) => process.stdout.write(chunk),
-    animate: Boolean(process.stdout.isTTY),
-});
-let tokens;
-try {
-    tokens = await pollForAccessToken({ automationUrl, authorization });
-    spinner.stop(theme.ok("Approved."));
-}
-catch (error) {
-    spinner.stop();
-    if (error instanceof DeviceFlowError)
-        fail(error.message);
-    throw error;
-}
-// The stored session is what lets `init` list projects later without another
-// browser round-trip: login once, bind repos as often as needed.
-saveCliSession({
-    automationUrl,
-    environment: args.environment,
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken,
-    expiresAt: tokens.expiresInSeconds ? Date.now() + tokens.expiresInSeconds * 1000 : undefined,
-});
-const transport = { automationUrl, accessToken: tokens.accessToken };
-async function choose(items, prompt, label) {
-    if (process.stdin.isTTY && process.stdout.isTTY) {
+    let automationUrl = process.env["JITERA_AUTOMATION_URL"] ?? "";
+    let mcpUrl = process.env["JITERA_MCP_URL"] ?? "";
+    let brand = "Jitera";
+    if (!automationUrl) {
         try {
-            return await interactiveSelect({
-                items,
-                prompt,
-                label,
-                theme,
-                input: process.stdin,
-                output: process.stdout,
+            const deployment = await discoverDeployment({
+                environment: args.environment,
+                studioUrl: process.env["JITERA_STUDIO_URL"],
             });
+            automationUrl = deployment.automationUrl;
+            mcpUrl = mcpUrl || deployment.mcpUrl;
+            brand = deployment.brand;
         }
         catch (error) {
-            if (error instanceof SelectCancelledError)
-                fail("cancelled.", 130);
+            if (error instanceof UnknownEnvironmentError)
+                fail(error.message, 2);
+            if (error instanceof DiscoveryError)
+                fail(error.message);
             throw error;
         }
     }
-    process.stdout.write(`\n  ${theme.bold(prompt)}\n\n`);
-    items.forEach((item, index) => {
-        process.stdout.write(`    ${theme.accent(String(index + 1).padStart(2))}  ${label(item)}\n`);
+    if (!automationUrl) {
+        fail("this deployment did not advertise an automation url, so sign-in cannot continue.");
+    }
+    let authorization;
+    try {
+        authorization = await requestDeviceAuthorization({ automationUrl });
+    }
+    catch (error) {
+        if (error instanceof DeviceFlowError)
+            fail(error.message);
+        throw error;
+    }
+    const openUrl = authorization.verificationUriComplete ?? authorization.verificationUri;
+    process.stdout.write(heading(theme, brand, "connect"));
+    process.stdout.write(`\n  ${theme.dim("Sign in to authorise this device.")}\n\n`);
+    process.stdout.write(`  ${theme.dim("Open")}  ${theme.accent(openUrl)}\n`);
+    process.stdout.write(`  ${theme.dim("Code")}  ${theme.bold(authorization.userCode)}\n\n`);
+    const spinner = startSpinner({
+        theme,
+        label: "Waiting for approval…",
+        write: (chunk) => process.stdout.write(chunk),
+        animate: Boolean(process.stdout.isTTY),
     });
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const answer = await rl.question(`\n  ${theme.dim(`Number [1-${items.length}]`)} `);
-    rl.close();
-    const picked = items[Number(answer.trim()) - 1];
-    if (!picked)
-        fail(`"${answer.trim()}" is not one of the listed options.`, 2);
-    return picked;
-}
-let created;
-let keyScope = "user";
-let projectUuid = args.project;
-// User-level first: one key for every project the account can access. Older
-// deployments reject the projectless params, and we fall back to project keys.
-if (!projectUuid) {
+    let tokens;
     try {
-        created = await createUserApiKey({ name: args.keyName, mcpAccess: args.access }, transport);
+        tokens = await pollForAccessToken({ automationUrl, authorization });
+        spinner.stop(theme.ok("Approved."));
     }
     catch (error) {
-        if (!(error instanceof GraphqlError))
-            throw error;
-        if (isAuthenticationFailure(error))
-            fail(error.message);
-        process.stdout.write(`\n  ${theme.dim("This deployment issues project keys only — choosing a project.")}\n`);
-    }
-}
-if (!created && !projectUuid) {
-    const organisations = await listOrganisations(transport);
-    const named = args.organisation
-        ? organisations.find((org) => org.slug === args.organisation)
-        : undefined;
-    if (args.organisation && !named) {
-        fail(organisations.length
-            ? `no organisation with slug "${args.organisation}". Available: ${organisations
-                .map((org) => org.slug)
-                .join(", ")}`
-            : `no organisation with slug "${args.organisation}".`);
-    }
-    let organisation = named;
-    if (!organisation && organisations.length === 1) {
-        organisation = organisations[0];
-        process.stdout.write(`\n  ${theme.dim("Organisation")}  ${organisation?.name ?? organisation?.slug}\n`);
-    }
-    else if (!organisation && organisations.length > 1) {
-        organisation = await choose(organisations, "Which organisation?", (org) => `${org.name ?? org.slug}${org.personal ? " (personal)" : ""}`);
-        process.stdout.write(`\n  ${theme.dim("Organisation")}  ${organisation.name ?? organisation.slug}\n`);
-    }
-    let projects;
-    try {
-        projects = await listProjects(transport, organisation);
-    }
-    catch (error) {
-        if (error instanceof GraphqlError)
+        spinner.stop();
+        if (error instanceof DeviceFlowError)
             fail(error.message);
         throw error;
     }
-    const where = organisation ? ` in ${organisation.name ?? organisation.slug}` : "";
-    if (projects.length === 0)
-        fail(`this account has no projects to connect to${where}.`);
-    const manageable = projects.filter((project) => project.canManageApiKey);
-    if (manageable.length === 0) {
-        fail(`none of the ${projects.length} project(s)${where} allow you to create an API key. ` +
-            "You need project-edit rights on a project whose plan includes API keys — " +
-            "ask an owner or admin, or pick a different organisation.");
-    }
-    if (manageable.length === 1) {
-        projectUuid = manageable[0]?.uuid;
-        process.stdout.write(`  ${theme.dim("Project")}       ${manageable[0]?.name}\n`);
-    }
-    else {
-        const choice = await choose(manageable, "Which project?", (project) => project.name);
-        projectUuid = choice.uuid;
-        process.stdout.write(`  ${theme.dim("Project")}       ${choice.name}\n`);
-    }
-}
-if (!created) {
-    keyScope = "project";
-    try {
-        created = await createApiKey({ projectUuid: projectUuid, name: args.keyName, mcpAccess: args.access }, transport);
-    }
-    catch (error) {
-        if (error instanceof GraphqlError)
-            fail(error.message);
-        throw error;
-    }
-}
-if (args.install) {
-    const environment = args.environment ?? "studio";
-    const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-    const values = { BRAND: brand };
-    const claude = installClaudeCodePlugin({ apiKey: created.rawKey, environment });
-    process.stdout.write(claude.installed
-        ? `\n  ${theme.ok("✓")} ${theme.bold("Claude Code")} ${theme.dim("configured, key stored in your keychain")}\n`
-        : `\n  ${theme.dim("–")} ${theme.bold("Claude Code")} ${theme.dim(`skipped (${claude.reason})`)}\n`);
-    if (!claude.installed) {
-        process.stdout.write(`    ${theme.dim("Run /plugin inside Claude Code to install and configure jitera-connect manually.")}\n`);
-    }
-    else {
-        const status = installStatusLine({ home: homedir() });
-        process.stdout.write(status.installed
-            ? `  ${theme.ok("✓")} ${theme.bold("Status line")} ${theme.dim("connection state shows at the bottom of Claude Code")}\n`
-            : `  ${theme.dim("–")} ${theme.bold("Status line")} ${theme.dim(`skipped (${status.reason})`)}\n`);
-    }
-    const context = {
-        scope: "user",
-        home: homedir(),
-        cwd: process.cwd(),
-        mcpUrl,
-        apiKey: created.rawKey,
-    };
-    const local = [cursor, codex].filter((adapter) => adapter.detect(context));
-    if (local.length) {
-        for (const adapter of local) {
-            const result = adapter.install(context);
-            process.stdout.write(`  ${theme.ok("✓")} ${theme.bold(adapter.label)} ${theme.dim(result.path)}\n`);
+    // The stored session is what lets `init` list projects later without another
+    // browser round-trip: login once, bind repos as often as needed.
+    saveCliSession({
+        automationUrl,
+        environment: args.environment,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresInSeconds ? Date.now() + tokens.expiresInSeconds * 1000 : undefined,
+    });
+    const transport = { automationUrl, accessToken: tokens.accessToken };
+    async function choose(items, prompt, label) {
+        if (process.stdin.isTTY && process.stdout.isTTY) {
+            try {
+                return await interactiveSelect({
+                    items,
+                    prompt,
+                    label,
+                    theme,
+                    input: process.stdin,
+                    output: process.stdout,
+                });
+            }
+            catch (error) {
+                if (error instanceof SelectCancelledError)
+                    fail("cancelled.", 130);
+                throw error;
+            }
         }
-        const targetDirs = [...new Set(local.flatMap((adapter) => adapter.skillsDirs(context)))];
-        installSkills({ packageRoot, targetDirs, values });
-        process.stdout.write(`  ${theme.ok("✓")} ${theme.dim("Skills written")}\n`);
+        process.stdout.write(`\n  ${theme.bold(prompt)}\n\n`);
+        items.forEach((item, index) => {
+            process.stdout.write(`    ${theme.accent(String(index + 1).padStart(2))}  ${label(item)}\n`);
+        });
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        const answer = await rl.question(`\n  ${theme.dim(`Number [1-${items.length}]`)} `);
+        rl.close();
+        const picked = items[Number(answer.trim()) - 1];
+        if (!picked)
+            fail(`"${answer.trim()}" is not one of the listed options.`, 2);
+        return picked;
     }
-    process.stdout.write(`\n  ${theme.dim("Optional:")} ${theme.accent("npx @jitera/connect init")} ` +
-        `${theme.dim("writes committable AGENTS.md instructions at a repo root")}\n`);
-}
-if (args.json) {
-    process.stdout.write(`${JSON.stringify({
-        apiKey: created.rawKey,
-        maskedKey: created.maskedKey,
-        scope: keyScope,
-        projectUuid: projectUuid ?? null,
-        mcpAccess: args.access,
-    }, undefined, 2)}\n`);
-}
-else if (!args.install) {
-    const access = args.access === "read" ? "read-only" : "read + write";
-    process.stdout.write(`\n  ${theme.ok("✓")} ${theme.dim(keyScope === "user"
-        ? `Created a user-level ${access} key. It works on every project your account can access.`
-        : `Created a ${access} key.`)}\n\n`);
-    process.stdout.write(`  export JITERA_API_KEY=${theme.bold(created.rawKey)}\n\n`);
-    process.stdout.write(`  ${theme.dim("Then run")} ${theme.accent("npx @jitera/connect")} ${theme.dim("to configure your assistants.")}\n`);
-    if (keyScope === "user") {
-        process.stdout.write(`  ${theme.dim("Bind each repo to its project with")} ${theme.accent("npx @jitera/connect init")}\n`);
+    let created;
+    let keyScope = "user";
+    let projectUuid = args.project;
+    // User-level first: one key for every project the account can access. Older
+    // deployments reject the projectless params, and we fall back to project keys.
+    if (!projectUuid) {
+        try {
+            created = await createUserApiKey({ name: args.keyName, mcpAccess: args.access }, transport);
+        }
+        catch (error) {
+            if (!(error instanceof GraphqlError))
+                throw error;
+            if (isAuthenticationFailure(error))
+                fail(error.message);
+            process.stdout.write(`\n  ${theme.dim("This deployment issues project keys only — choosing a project.")}\n`);
+        }
     }
-}
+    if (!created && !projectUuid) {
+        const organisations = await listOrganisations(transport);
+        const named = args.organisation
+            ? organisations.find((org) => org.slug === args.organisation)
+            : undefined;
+        if (args.organisation && !named) {
+            fail(organisations.length
+                ? `no organisation with slug "${args.organisation}". Available: ${organisations
+                    .map((org) => org.slug)
+                    .join(", ")}`
+                : `no organisation with slug "${args.organisation}".`);
+        }
+        let organisation = named;
+        if (!organisation && organisations.length === 1) {
+            organisation = organisations[0];
+            process.stdout.write(`\n  ${theme.dim("Organisation")}  ${organisation?.name ?? organisation?.slug}\n`);
+        }
+        else if (!organisation && organisations.length > 1) {
+            organisation = await choose(organisations, "Which organisation?", (org) => `${org.name ?? org.slug}${org.personal ? " (personal)" : ""}`);
+            process.stdout.write(`\n  ${theme.dim("Organisation")}  ${organisation.name ?? organisation.slug}\n`);
+        }
+        let projects;
+        try {
+            projects = await listProjects(transport, organisation);
+        }
+        catch (error) {
+            if (error instanceof GraphqlError)
+                fail(error.message);
+            throw error;
+        }
+        const where = organisation ? ` in ${organisation.name ?? organisation.slug}` : "";
+        if (projects.length === 0)
+            fail(`this account has no projects to connect to${where}.`);
+        const manageable = projects.filter((project) => project.canManageApiKey);
+        if (manageable.length === 0) {
+            fail(`none of the ${projects.length} project(s)${where} allow you to create an API key. ` +
+                "You need project-edit rights on a project whose plan includes API keys — " +
+                "ask an owner or admin, or pick a different organisation.");
+        }
+        if (manageable.length === 1) {
+            projectUuid = manageable[0]?.uuid;
+            process.stdout.write(`  ${theme.dim("Project")}       ${manageable[0]?.name}\n`);
+        }
+        else {
+            const choice = await choose(manageable, "Which project?", (project) => project.name);
+            projectUuid = choice.uuid;
+            process.stdout.write(`  ${theme.dim("Project")}       ${choice.name}\n`);
+        }
+    }
+    if (!created) {
+        keyScope = "project";
+        try {
+            created = await createApiKey({ projectUuid: projectUuid, name: args.keyName, mcpAccess: args.access }, transport);
+        }
+        catch (error) {
+            if (error instanceof GraphqlError)
+                fail(error.message);
+            throw error;
+        }
+    }
+    if (args.install) {
+        const environment = args.environment ?? "studio";
+        const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+        const values = { BRAND: brand };
+        const claude = installClaudeCodePlugin({ apiKey: created.rawKey, environment });
+        process.stdout.write(claude.installed
+            ? `\n  ${theme.ok("✓")} ${theme.bold("Claude Code")} ${theme.dim("configured, key stored in your keychain")}\n`
+            : `\n  ${theme.dim("–")} ${theme.bold("Claude Code")} ${theme.dim(`skipped (${claude.reason})`)}\n`);
+        if (!claude.installed) {
+            process.stdout.write(`    ${theme.dim("Run /plugin inside Claude Code to install and configure jitera-connect manually.")}\n`);
+        }
+        else {
+            const status = installStatusLine({ home: homedir() });
+            process.stdout.write(status.installed
+                ? `  ${theme.ok("✓")} ${theme.bold("Status line")} ${theme.dim("connection state shows at the bottom of Claude Code")}\n`
+                : `  ${theme.dim("–")} ${theme.bold("Status line")} ${theme.dim(`skipped (${status.reason})`)}\n`);
+        }
+        const context = {
+            scope: "user",
+            home: homedir(),
+            cwd: process.cwd(),
+            mcpUrl,
+            apiKey: created.rawKey,
+        };
+        const local = [cursor, codex].filter((adapter) => adapter.detect(context));
+        if (local.length) {
+            for (const adapter of local) {
+                const result = adapter.install(context);
+                process.stdout.write(`  ${theme.ok("✓")} ${theme.bold(adapter.label)} ${theme.dim(result.path)}\n`);
+            }
+            const targetDirs = [...new Set(local.flatMap((adapter) => adapter.skillsDirs(context)))];
+            installSkills({ packageRoot, targetDirs, values });
+            process.stdout.write(`  ${theme.ok("✓")} ${theme.dim("Skills written")}\n`);
+        }
+        process.stdout.write(`\n  ${theme.dim("Optional:")} ${theme.accent("npx @jitera/connect init")} ` +
+            `${theme.dim("writes committable AGENTS.md instructions at a repo root")}\n`);
+    }
+    if (args.json) {
+        process.stdout.write(`${JSON.stringify({
+            apiKey: created.rawKey,
+            maskedKey: created.maskedKey,
+            scope: keyScope,
+            projectUuid: projectUuid ?? null,
+            mcpAccess: args.access,
+        }, undefined, 2)}\n`);
+    }
+    else if (!args.install) {
+        const access = args.access === "read" ? "read-only" : "read + write";
+        process.stdout.write(`\n  ${theme.ok("✓")} ${theme.dim(keyScope === "user"
+            ? `Created a user-level ${access} key. It works on every project your account can access.`
+            : `Created a ${access} key.`)}\n\n`);
+        // Printed because this path exists for people who will export it themselves;
+        // the --install flow never needs it. It is shown once and cannot be shown
+        // again, and it reaches shell history, CI logs and anything recording the
+        // terminal, so it is labelled rather than left looking like ordinary output.
+        process.stdout.write(`  ${theme.err("secret")} ${theme.dim(keyScope === "user"
+            ? "account-wide read + write, shown once. Store it somewhere safe and revoke it in the studio if it leaks."
+            : "shown once. Store it somewhere safe and revoke it in the studio if it leaks.")}\n`);
+        process.stdout.write(`  export JITERA_API_KEY=${theme.bold(created.rawKey)}\n\n`);
+        process.stdout.write(`  ${theme.dim("Then run")} ${theme.accent("npx @jitera/connect")} ${theme.dim("to configure your assistants.")}\n`);
+        if (keyScope === "user") {
+            process.stdout.write(`  ${theme.dim("Bind each repo to its project with")} ${theme.accent("npx @jitera/connect init")}\n`);
+        }
+    }
+});
 //# sourceMappingURL=login.js.map
