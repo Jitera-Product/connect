@@ -415,5 +415,6 @@ test("a disabled api-keys feature explains itself instead of printing UNAUTHORIZ
 
   assert.notEqual(code, 0);
   assert.match(stderr, /api keys are not enabled/i);
+  assert.match(stderr, /account-wide key/i, "names the path that is not gated");
   assert.ok(!/^\s*UNAUTHORIZED\s*$/m.test(stderr), "the bare code is not an explanation");
 });

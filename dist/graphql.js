@@ -14,8 +14,11 @@ export class GraphqlError extends Error {
 // feature toggle: an account without it fails on the ordinary login path.
 function describe(code, resource) {
     if (code === "UNAUTHORIZED" && resource === "api_key") {
-        return ("api keys are not enabled for this account. Ask an owner to enable the " +
-            "api keys feature, or sign in with an account that has it");
+        // Only the project and agent paths are gated by the api-keys toggle, so
+        // this is reachable when a project is named, not on a plain login.
+        return ("api keys are not enabled for this project. Ask an owner to enable the " +
+            "api keys feature for it, or run login without --project for an " +
+            "account-wide key that works everywhere you have access");
     }
     if (code === "UNAUTHORIZED" || code === "FORBIDDEN") {
         return resource

@@ -360,7 +360,7 @@ test("a project with no agents is not an error", async () => {
 test("a bare error code is explained rather than echoed", async () => {
   // Errors::ApiError uses the code as the message when no custom text is set.
   const cases: [string, string | undefined, RegExp][] = [
-    ["UNAUTHORIZED", "api_key", /api keys are not enabled for this account/i],
+    ["UNAUTHORIZED", "api_key", /api keys are not enabled for this project/i],
     ["UNAUTHORIZED", "project", /does not have permission for this project/i],
     ["FORBIDDEN", "organisation", /does not have permission for this organisation/i],
     ["NOT_FOUND", "project", /no project with that id, or your account cannot see it/i],
@@ -401,7 +401,7 @@ test("a server that says more than the code keeps its own words", async () => {
     (error: unknown) =>
       error instanceof GraphqlError &&
       /plan without api keys/.test(error.message) &&
-      /not enabled for this account/i.test(error.message)
+      /not enabled for this project/i.test(error.message)
   );
   await server.close();
 });
