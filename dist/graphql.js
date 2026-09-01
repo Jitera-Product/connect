@@ -8,6 +8,39 @@ export class GraphqlError extends Error {
         this.errors = errors;
     }
 }
+// The API raises Errors::ApiError, whose message is the bare code when no
+// custom text is given, so "UNAUTHORIZED" is what reaches the terminal. These
+// say what the code means and what to do, which matters most for the api-key
+// feature toggle: an account without it fails on the ordinary login path.
+function describe(code, resource) {
+    if (code === "UNAUTHORIZED" && resource === "api_key") {
+        return ("api keys are not enabled for this account. Ask an owner to enable the " +
+            "api keys feature, or sign in with an account that has it");
+    }
+    if (code === "UNAUTHORIZED" || code === "FORBIDDEN") {
+        return resource
+            ? `your account does not have permission for this ${resource.replace(/_/g, " ")}`
+            : "your account does not have permission for that";
+    }
+    if (code === "NOT_FOUND") {
+        return resource
+            ? `no ${resource.replace(/_/g, " ")} with that id, or your account cannot see it`
+            : "not found, or your account cannot see it";
+    }
+    return undefined;
+}
+function readableError(error) {
+    const message = error.message ?? "unknown error";
+    const code = error.extensions?.code;
+    if (!code)
+        return message;
+    const explained = describe(code, error.extensions?.resource);
+    if (!explained)
+        return message;
+    // Keep the code when the backend said more than the code itself, so nothing
+    // the server chose to say is thrown away.
+    return message === code ? explained : `${explained} (${message})`;
+}
 export async function query(operation, document, variables, { automationUrl, accessToken, fetchImpl = fetch, timeoutMs = 20_000 }) {
     const url = `${automationUrl.replace(/\/$/, "")}/graphql`;
     let response;
@@ -39,7 +72,7 @@ export async function query(operation, document, variables, { automationUrl, acc
         throw new GraphqlError(operation, [`HTTP ${response.status} with an unreadable body`]);
     }
     if (payload.errors?.length) {
-        throw new GraphqlError(operation, payload.errors.map((e) => e.message ?? "unknown error"));
+        throw new GraphqlError(operation, payload.errors.map(readableError));
     }
     if (payload.data === undefined || payload.data === null) {
         throw new GraphqlError(operation, []);

@@ -356,3 +356,66 @@ test("a project with no agents is not an error", async () => {
   await server.close();
   assert.deepEqual(agents, []);
 });
+
+test("a bare error code is explained rather than echoed", async () => {
+  // Errors::ApiError uses the code as the message when no custom text is set.
+  const cases: [string, string | undefined, RegExp][] = [
+    ["UNAUTHORIZED", "api_key", /api keys are not enabled for this account/i],
+    ["UNAUTHORIZED", "project", /does not have permission for this project/i],
+    ["FORBIDDEN", "organisation", /does not have permission for this organisation/i],
+    ["NOT_FOUND", "project", /no project with that id, or your account cannot see it/i],
+  ];
+
+  for (const [code, resource, expected] of cases) {
+    const server = await serve((_operation, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ errors: [{ message: code, extensions: { code, resource } }] }));
+    });
+
+    await assert.rejects(
+      listProjects({ automationUrl: server.url, accessToken: "t" }),
+      (error: unknown) => error instanceof GraphqlError && expected.test(error.message),
+      `${code}/${resource}`
+    );
+    await server.close();
+  }
+});
+
+test("a server that says more than the code keeps its own words", async () => {
+  const server = await serve((_operation, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        errors: [
+          {
+            message: "this project is on a plan without api keys",
+            extensions: { code: "UNAUTHORIZED", resource: "api_key" },
+          },
+        ],
+      })
+    );
+  });
+
+  await assert.rejects(
+    listProjects({ automationUrl: server.url, accessToken: "t" }),
+    (error: unknown) =>
+      error instanceof GraphqlError &&
+      /plan without api keys/.test(error.message) &&
+      /not enabled for this account/i.test(error.message)
+  );
+  await server.close();
+});
+
+test("an error with no code is passed through untouched", async () => {
+  const server = await serve((_operation, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ errors: [{ message: "something specific went wrong" }] }));
+  });
+
+  await assert.rejects(
+    listProjects({ automationUrl: server.url, accessToken: "t" }),
+    (error: unknown) =>
+      error instanceof GraphqlError && /something specific went wrong/.test(error.message)
+  );
+  await server.close();
+});

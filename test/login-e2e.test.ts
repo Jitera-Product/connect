@@ -396,3 +396,24 @@ test("the printed key is labelled as a secret shown once", async () => {
   assert.match(stdout, /account-wide read \+ write/i);
   assert.match(stdout, /sk-user-key-1/, "the key itself is still available to copy");
 });
+
+test("a disabled api-keys feature explains itself instead of printing UNAUTHORIZED", async () => {
+  // check_feature_access raises ApiError(UNAUTHORIZED, resource: 'api_key'), whose
+  // message is the bare code. Accounts without the flag - unlimited-credit ones
+  // during rollout - hit this on the ordinary login path, so it has to read as
+  // something a user can act on.
+  const server = await replayServer({
+    userKeyResponse: {
+      errors: [{ message: "UNAUTHORIZED", extensions: { code: "UNAUTHORIZED", resource: "api_key" } }],
+    },
+    createKeyResponse: {
+      errors: [{ message: "UNAUTHORIZED", extensions: { code: "UNAUTHORIZED", resource: "api_key" } }],
+    },
+  });
+  const { stderr, code } = await runNode(LOGIN, { env: { JITERA_AUTOMATION_URL: server.url } });
+  await server.close();
+
+  assert.notEqual(code, 0);
+  assert.match(stderr, /api keys are not enabled/i);
+  assert.ok(!/^\s*UNAUTHORIZED\s*$/m.test(stderr), "the bare code is not an explanation");
+});
