@@ -18,7 +18,7 @@ interface Recorded {
 }
 
 function stub(
-  responses: readonly { status?: number; body: Record<string, unknown> }[]
+  responses: readonly { status?: number; body?: Record<string, unknown>; text?: string }[]
 ): { fetchImpl: typeof fetch; calls: Recorded[] } {
   const calls: Recorded[] = [];
   let index = 0;
@@ -29,7 +29,7 @@ function stub(
     });
     const response = responses[Math.min(index, responses.length - 1)];
     index += 1;
-    return new Response(JSON.stringify(response?.body ?? {}), {
+    return new Response(response?.text ?? JSON.stringify(response?.body ?? {}), {
       status: response?.status ?? 200,
       headers: { "content-type": "application/json" },
     });
@@ -126,6 +126,49 @@ test("slow_down widens the interval instead of hammering the server", async () =
   });
 
   assert.deepEqual(delays, [5000, 10000, 10000]);
+});
+
+test("a rate limit backs off and keeps polling instead of failing the sign-in", async () => {
+  // pilot-06 returned this while the user was still finding the browser; it
+  // used to be fatal because it fell into the invalid_grant branch.
+  const delays: number[] = [];
+  const { fetchImpl, calls } = stub([
+    { status: 429, body: { error: "rate_limited", error_description: "Rate limit exceeded. Try again later." } },
+    { status: 400, body: { error: "authorization_pending" } },
+    { body: { access_token: "at" } },
+  ]);
+
+  const token = await pollForAccessToken({
+    automationUrl: AUTOMATION,
+    authorization: AUTHORIZATION,
+    fetchImpl,
+    sleep: async (ms) => {
+      delays.push(ms);
+    },
+  });
+
+  assert.equal(token.accessToken, "at");
+  assert.equal(calls.length, 3, "polling continued past the 429");
+  assert.deepEqual(delays, [5000, 10000, 10000], "and the interval widened like slow_down");
+});
+
+test("a non-JSON rate limit page is handled the same way", async () => {
+  // A gateway limit is usually an HTML or text body, which the transport turns
+  // into an invalid_response payload; the status is what has to be trusted.
+  const { fetchImpl, calls } = stub([
+    { status: 429, text: "Rate limit exceeded" },
+    { body: { access_token: "at" } },
+  ]);
+
+  const token = await pollForAccessToken({
+    automationUrl: AUTOMATION,
+    authorization: AUTHORIZATION,
+    fetchImpl,
+    sleep: async () => {},
+  });
+
+  assert.equal(token.accessToken, "at");
+  assert.equal(calls.length, 2);
 });
 
 test("a declined request fails immediately, without retrying", async () => {

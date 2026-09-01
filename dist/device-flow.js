@@ -101,10 +101,20 @@ export async function pollForAccessToken({ automationUrl, authorization, clientI
         catch (error) {
             throw new DeviceFlowError("transport", `could not reach ${url}: ${error.message}`);
         }
-        const { payload } = result;
+        const { status, payload } = result;
         const token = payload["access_token"];
         if (typeof token === "string" && token)
             return toTokenSet(payload);
+        // A 429 is the gateway or rate limiter asking for room, not OAuth saying the
+        // grant is dead. It used to fall through to the fatal branch, so a user who
+        // took a minute to find the browser was thrown out with "sign-in failed:
+        // Rate limit exceeded". Treat it as slow_down: widen and keep polling until
+        // the deadline. Checked by status because a gateway limit is rarely JSON.
+        if (status === 429) {
+            intervalSeconds += SLOW_DOWN_INCREMENT_SECONDS;
+            onPending?.(attempt);
+            continue;
+        }
         const error = String(payload["error"] ?? "");
         switch (error) {
             case "authorization_pending":
