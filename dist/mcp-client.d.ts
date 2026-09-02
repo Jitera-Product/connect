@@ -27,6 +27,8 @@ export declare class McpCallError extends Error {
     readonly detail: unknown;
     constructor(message: string, detail?: unknown);
 }
+export declare const BOOST_PAYLOAD_PARAM = "com.jitera.boost";
+export declare function bindingUrl(url: string, projectUuid: string | undefined): string;
 export declare function parseBody(contentType: string, raw: string): JsonRpcResponse | undefined;
 export declare function extractText(result: ToolResult | undefined): string;
 export interface TransportOptions {

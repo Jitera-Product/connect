@@ -33,6 +33,24 @@ export class McpCallError extends Error {
   }
 }
 
+// The gateway in front of the server strips unrecognised `x-*` request headers,
+// so a project sent only as `x-jitera-project` never arrives. The server also
+// reads a base64 "boost payload" from the `com.jitera.boost` query parameter,
+// and query strings are forwarded untouched. So the binding travels both ways:
+// the query parameter for gateway deployments, the header for direct ones. The
+// server verifies the claimed project against the key's owner before trusting
+// it, so carrying it in the URL is not itself an authorisation.
+export const BOOST_PAYLOAD_PARAM = "com.jitera.boost";
+
+export function bindingUrl(url: string, projectUuid: string | undefined): string {
+  if (!projectUuid) return url;
+  const payload = Buffer.from(JSON.stringify({ session: { project_uuid: projectUuid } })).toString(
+    "base64"
+  );
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}${BOOST_PAYLOAD_PARAM}=${encodeURIComponent(payload)}`;
+}
+
 export function parseBody(contentType: string, raw: string): JsonRpcResponse | undefined {
   if (raw.trim() === "") return undefined;
   if (contentType.includes("text/event-stream")) {
@@ -79,7 +97,7 @@ export async function postRpc(
   let response: Response;
   let raw: string;
   try {
-    response = await fetch(url, {
+    response = await fetch(bindingUrl(url, projectUuid), {
       method: "POST",
       signal: AbortSignal.timeout(timeoutMs),
       headers: {

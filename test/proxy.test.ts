@@ -216,6 +216,14 @@ test("the repo's project binding rides every request as a header", async () => {
   );
   await s.close();
   assert.equal(s.headers[0]?.["x-jitera-project"], "proj-42");
+  // The gateway strips x-* headers, so the binding also rides the query string.
+  const query = (s.paths[0] ?? "").split("?")[1] ?? "";
+  const payload = new URLSearchParams(query).get("com.jitera.boost");
+  assert.ok(payload, "expected the boost payload on the request url");
+  const decoded = JSON.parse(Buffer.from(payload as string, "base64").toString("utf8")) as {
+    session?: { project_uuid?: string };
+  };
+  assert.equal(decoded.session?.project_uuid, "proj-42");
   assert.equal((JSON.parse(out.trim()) as { id: number }).id, 1);
 });
 

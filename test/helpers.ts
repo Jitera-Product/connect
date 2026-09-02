@@ -52,6 +52,7 @@ export interface StubServer {
   readonly url: string;
   readonly requests: readonly Record<string, unknown>[];
   readonly headers: readonly IncomingMessage["headers"][];
+  readonly paths: readonly string[];
   close(): Promise<void>;
 }
 
@@ -64,9 +65,11 @@ export type StubHandler = (
 export function stubServer(handler?: StubHandler): Promise<StubServer> {
   const requests: Record<string, unknown>[] = [];
   const headers: IncomingMessage["headers"][] = [];
+  const paths: string[] = [];
 
   const server = createServer((req, res) => {
     headers.push(req.headers);
+    paths.push(req.url ?? "");
     let raw = "";
     req.on("data", (chunk: Buffer) => (raw += chunk.toString()));
     req.on("end", () => {
@@ -91,6 +94,7 @@ export function stubServer(handler?: StubHandler): Promise<StubServer> {
         url: `http://127.0.0.1:${port}/mcp`,
         requests,
         headers,
+        paths,
         close: () => new Promise<void>((done) => server.close(() => done())),
       });
     });
