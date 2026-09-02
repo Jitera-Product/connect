@@ -87,11 +87,15 @@ await runCommand(async () => {
         fail("no stored sign-in, so there is no account to create a key for. Run " +
             `${theme.accent("npx @jitera/connect login")} first.`);
     }
+    // The deployment this key is for is the one the session was created against.
+    // Defaulting to production instead would quietly move a pilot user's
+    // assistants to a different deployment as a side effect of getting a key.
+    const environment = args.environment ?? session.environment;
     let brand = DEFAULT_BRAND;
     let mcpUrl = "";
     try {
         const deployment = await discoverDeployment({
-            environment: args.environment,
+            environment,
             studioUrl: process.env["JITERA_STUDIO_URL"],
         });
         brand = deployment.brand;
@@ -132,8 +136,10 @@ await runCommand(async () => {
         process.stdout.write(heading(theme, brand, "new key"));
     const access = args.access === "read" ? "read-only" : "read + write";
     if (args.install) {
-        const environment = args.environment ?? "studio";
-        const claude = installClaudeCodePlugin({ apiKey: created.rawKey, environment });
+        const claude = installClaudeCodePlugin({
+            apiKey: created.rawKey,
+            environment: environment ?? "studio",
+        });
         if (!args.json) {
             process.stdout.write(claude.installed
                 ? `  ${theme.ok("✓")} ${theme.bold("Claude Code")} ${theme.dim("now uses the new key")}\n`

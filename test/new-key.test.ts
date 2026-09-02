@@ -57,3 +57,33 @@ test("an unknown environment is reported as such", async () => {
   assert.notEqual(code, 0);
   assert.match(stderr, /no stored sign-in|unknown environment/);
 });
+
+test("the key is minted for the deployment the sign-in was made against", async () => {
+  // Without --env the environment comes from the stored session, so getting a
+  // key never moves a pilot user's assistants to production behind their back.
+  const { writeFileSync, mkdirSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { isolatedTmpdir } = await import("./helpers.ts");
+
+  const configDir = isolatedTmpdir();
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(
+    join(configDir, "session.json"),
+    JSON.stringify({
+      automationUrl: "http://127.0.0.1:1",
+      environment: "studio-06",
+      accessToken: "token",
+    }),
+    "utf8"
+  );
+
+  const { code, stderr } = await runNode(CONNECT, {
+    args: ["new-key"],
+    env: { JITERA_CONNECT_CONFIG_DIR: configDir, JITERA_STUDIO_URL: "http://127.0.0.1:1" },
+  });
+
+  // Discovery is refused by the dead studio, which is what proves it got that
+  // far: the session was accepted and its environment was the one resolved.
+  assert.notEqual(code, 0);
+  assert.doesNotMatch(stderr, /no stored sign-in/);
+});
