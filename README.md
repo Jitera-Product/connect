@@ -88,6 +88,33 @@ you select, so a selection narrows the noise without hiding shared facts.
 it needs the repo bound to a project first, because that is what says which
 agents exist. run `init` if it is not.
 
+## replacing your key
+
+```
+npx @jitera/connect new-key
+```
+
+use this when the key you have is read-only and you need to write, or when you
+just want a fresh one. it reuses the sign-in `login` already stored, so there is
+no browser round trip: it mints a new account-wide key and points your
+assistants at it.
+
+new keys are read + write by default, which is what lets an assistant save
+memory and write specs. pass `--access=read` if you want a read-only one.
+
+```
+npx @jitera/connect new-key --access=read     # read-only instead
+npx @jitera/connect new-key --name=<name>     # how it is labelled in the web app
+npx @jitera/connect new-key --no-install      # print the key, change no config
+```
+
+restart your assistant afterwards so it picks the key up. the old key keeps
+working until you revoke it in the web app — creating a new one does not retire
+the old one.
+
+if there is no stored sign-in it says so and points at `login`, which is the
+command that does the browser step.
+
 ## what applies where
 
 the api key is global: one per user, per machine, stored by `login --install`.

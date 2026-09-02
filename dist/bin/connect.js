@@ -9,6 +9,9 @@ else if (subcommand === "init") {
 else if (subcommand === "set-agent") {
     await import("./set-agent.js");
 }
+else if (subcommand === "new-key") {
+    await import("./new-key.js");
+}
 else if (subcommand === "statusline") {
     await import("./statusline.js");
 }

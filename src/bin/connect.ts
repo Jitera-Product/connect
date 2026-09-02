@@ -7,6 +7,8 @@ if (subcommand === "login") {
   await import("./init.ts");
 } else if (subcommand === "set-agent") {
   await import("./set-agent.ts");
+} else if (subcommand === "new-key") {
+  await import("./new-key.ts");
 } else if (subcommand === "statusline") {
   await import("./statusline.ts");
 } else {
