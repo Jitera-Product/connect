@@ -1,4 +1,12 @@
 import { createInterface } from "node:readline/promises";
+import { emitKeypressEvents } from "node:readline";
+
+// How long a lone escape waits to see whether it was the start of a sequence
+// rather than the Escape key. Node's own default, and deliberately generous:
+// an arrow key that gets split across two reads and is then read as Escape
+// abandons the picker and loses the selection, which is far worse than Escape
+// taking a moment to register. Ctrl+C cancels instantly either way.
+const ESCAPE_TIMEOUT_MS = 500;
 
 import type { Theme } from "./theme.ts";
 
@@ -75,89 +83,24 @@ export async function chooseFrom<T>({
   return picked;
 }
 
-// Terminals do not deliver one keypress per read. Two keys pressed quickly
-// arrive in one chunk, and an escape sequence can be split across chunks - the
-// escape in one read, "[A" in the next. Decoding a chunk as a single key meant
-// a coalesced chunk did nothing, and, worse, the leading escape of a split
-// arrow read as Escape and cancelled the picker. On Windows that is common
-// enough that arrow keys could abandon a selection outright.
-//
-// So keys are pulled from a running buffer, and a trailing incomplete sequence
-// is held back until the rest of it arrives. A lone escape is only a real
-// Escape once nothing follows it, which is what the flush timer settles.
-const INCOMPLETE_ESCAPE = /^\u001b(\[|O)?$/;
-const ESCAPE_FLUSH_MS = 50;
-
-export function readKeys(buffer: string): { keys: string[]; pending: string } {
-  const keys: string[] = [];
-  let rest = buffer;
-
-  while (rest.length > 0) {
-    if (INCOMPLETE_ESCAPE.test(rest)) return { keys, pending: rest };
-
-    if (rest.startsWith("\u001b[") || rest.startsWith("\u001bO")) {
-      keys.push(rest.slice(0, 3));
-      rest = rest.slice(3);
-      continue;
-    }
-
-    // "\r\n" is one confirmation, not two.
-    if (rest.startsWith("\r\n")) {
-      keys.push("\r\n");
-      rest = rest.slice(2);
-      continue;
-    }
-
-    keys.push(rest.slice(0, 1));
-    rest = rest.slice(1);
-  }
-
-  return { keys, pending: "" };
-}
-
-interface KeyReader {
-  readonly feed: (chunk: Buffer | string, onKey: (key: string) => void) => void;
-  readonly stop: () => void;
-}
-
-function createKeyReader(): KeyReader {
-  let pending = "";
-  let timer: ReturnType<typeof setTimeout> | undefined;
-
-  const clear = (): void => {
-    if (timer) clearTimeout(timer);
-    timer = undefined;
-  };
-
-  return {
-    feed(chunk, onKey) {
-      clear();
-      const { keys, pending: rest } = readKeys(pending + chunk.toString());
-      pending = rest;
-      for (const key of keys) onKey(key);
-
-      // Nothing completed it, so it was the key itself.
-      if (pending === "\u001b") {
-        timer = setTimeout(() => {
-          pending = "";
-          onKey("\u001b");
-        }, ESCAPE_FLUSH_MS);
-        timer.unref?.();
-      }
-    },
-    stop() {
-      clear();
-      pending = "";
-    },
-  };
+// What node's key decoder reports. Matching on the name rather than the raw
+// bytes is what makes this behave the same everywhere: the same arrow key
+// arrives as a different sequence depending on the terminal, and on Windows it
+// is regularly split across two reads. Node reassembles it and names it.
+export interface Key {
+  readonly name?: string;
+  readonly ctrl?: boolean;
+  readonly meta?: boolean;
+  readonly shift?: boolean;
+  readonly sequence?: string;
 }
 
 export interface SelectInput {
   setRawMode?(mode: boolean): unknown;
   resume?(): unknown;
   pause?(): unknown;
-  on(event: "data", listener: (chunk: Buffer | string) => void): unknown;
-  off(event: "data", listener: (chunk: Buffer | string) => void): unknown;
+  on(event: "keypress", listener: (str: string | undefined, key: Key) => void): unknown;
+  off(event: "keypress", listener: (str: string | undefined, key: Key) => void): unknown;
 }
 
 export interface SelectOutput {
@@ -180,13 +123,14 @@ type Action =
   | { readonly kind: "cancel" }
   | { readonly kind: "none" };
 
-function parseKey(sequence: string, count: number): Action {
-  if (sequence === "" || sequence === "") return { kind: "cancel" };
-  if (sequence === "\r" || sequence === "\n" || sequence === "\r\n") return { kind: "confirm" };
-  if (sequence === "[A" || sequence === "OA" || sequence === "k") return { kind: "move", delta: -1 };
-  if (sequence === "[B" || sequence === "OB" || sequence === "j") return { kind: "move", delta: 1 };
-  if (/^[1-9]$/.test(sequence)) {
-    const index = Number(sequence) - 1;
+export function parseKey(str: string | undefined, key: Key, count: number): Action {
+  if (key.ctrl && key.name === "c") return { kind: "cancel" };
+  if (key.name === "escape") return { kind: "cancel" };
+  if (key.name === "return" || key.name === "enter") return { kind: "confirm" };
+  if (key.name === "up" || key.name === "k") return { kind: "move", delta: -1 };
+  if (key.name === "down" || key.name === "j") return { kind: "move", delta: 1 };
+  if (str && /^[1-9]$/.test(str)) {
+    const index = Number(str) - 1;
     if (index < count) return { kind: "jump", index };
   }
   return { kind: "none" };
@@ -219,24 +163,17 @@ export function interactiveSelect<T>({ items, prompt, label, theme, input, outpu
     // Everything drawn (blank line, prompt, blank line, one line per item) is
     // erased again on the way out, so the caller decides what remains on screen.
     const finish = (): void => {
-      reader.stop();
-      input.off("data", onData);
+      input.off("keypress", onKey);
       input.setRawMode?.(false);
       input.pause?.();
       output.write(`[${items.length + 3}A\r[J`);
       output.write("[?25h");
     };
 
-    const reader = createKeyReader();
-
-    const onData = (chunk: Buffer | string): void => {
-      reader.feed(chunk, (key) => onKey(key));
-    };
-
     let settled = false;
-    const onKey = (key: string): void => {
+    const onKey = (str: string | undefined, key: Key): void => {
       if (settled) return;
-      const action = parseKey(key, items.length);
+      const action = parseKey(str, key ?? {}, items.length);
       if (action.kind === "move") {
         highlighted = (highlighted + action.delta + items.length) % items.length;
         repaint();
@@ -258,9 +195,13 @@ export function interactiveSelect<T>({ items, prompt, label, theme, input, outpu
     output.write(`\n  ${theme.bold(prompt)} ${theme.dim("↑/↓ then enter")}\n\n`);
     paintItems();
 
+    // Node reassembles split escape sequences and names each key, so the same
+    // arrow works whatever the terminal sends. The timeout is how long a lone
+    // escape waits to see whether it was the start of a sequence.
+    emitKeypressEvents(input as never, { escapeCodeTimeout: ESCAPE_TIMEOUT_MS } as never);
     input.setRawMode?.(true);
     input.resume?.();
-    input.on("data", onData);
+    input.on("keypress", onKey);
   });
 }
 
@@ -273,18 +214,16 @@ type MultiAction =
   | { readonly kind: "cancel" }
   | { readonly kind: "none" };
 
-function parseMultiKey(sequence: string): MultiAction {
-  if (sequence === "\u0003" || sequence === "\u001b") return { kind: "cancel" };
-  if (sequence === "\r" || sequence === "\n" || sequence === "\r\n") return { kind: "confirm" };
-  if (sequence === " ") return { kind: "toggle" };
-  if (sequence === "a" || sequence === "A") return { kind: "all" };
-  if (sequence === "n" || sequence === "N") return { kind: "none_of_them" };
-  if (sequence === "\u001b[A" || sequence === "\u001bOA" || sequence === "k") {
-    return { kind: "move", delta: -1 };
-  }
-  if (sequence === "\u001b[B" || sequence === "\u001bOB" || sequence === "j") {
-    return { kind: "move", delta: 1 };
-  }
+export function parseMultiKey(str: string | undefined, key: Key): MultiAction {
+  if (key.ctrl && key.name === "c") return { kind: "cancel" };
+  if (key.name === "escape") return { kind: "cancel" };
+  if (key.name === "return" || key.name === "enter") return { kind: "confirm" };
+  // Some terminals report the space bar only as its character.
+  if (key.name === "space" || str === " ") return { kind: "toggle" };
+  if (key.name === "a") return { kind: "all" };
+  if (key.name === "n") return { kind: "none_of_them" };
+  if (key.name === "up" || key.name === "k") return { kind: "move", delta: -1 };
+  if (key.name === "down" || key.name === "j") return { kind: "move", delta: 1 };
   return { kind: "none" };
 }
 
@@ -368,24 +307,17 @@ export function multiSelect<T>({
     };
 
     const finish = (): void => {
-      reader.stop();
-      input.off("data", onData);
+      input.off("keypress", onKey);
       input.setRawMode?.(false);
       input.pause?.();
       output.write(`\u001b[${painted + 3}A\r\u001b[J`);
       output.write("\u001b[?25h");
     };
 
-    const reader = createKeyReader();
-
-    const onData = (chunk: Buffer | string): void => {
-      reader.feed(chunk, (key) => onKey(key));
-    };
-
     let settled = false;
-    const onKey = (key: string): void => {
+    const onKey = (str: string | undefined, key: Key): void => {
       if (settled) return;
-      const action = parseMultiKey(key);
+      const action = parseMultiKey(str, key ?? {});
       if (action.kind === "move") {
         highlighted = (highlighted + action.delta + items.length) % items.length;
         repaint();
@@ -415,9 +347,13 @@ export function multiSelect<T>({
     );
     paintItems();
 
+    // Node reassembles split escape sequences and names each key, so the same
+    // arrow works whatever the terminal sends. The timeout is how long a lone
+    // escape waits to see whether it was the start of a sequence.
+    emitKeypressEvents(input as never, { escapeCodeTimeout: ESCAPE_TIMEOUT_MS } as never);
     input.setRawMode?.(true);
     input.resume?.();
-    input.on("data", onData);
+    input.on("keypress", onKey);
   });
 }
 

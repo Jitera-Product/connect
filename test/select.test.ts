@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
 import { createTheme } from "../src/theme.ts";
-import { SelectCancelledError, interactiveSelect, multiSelect, readKeys } from "../src/select.ts";
+import { SelectCancelledError, interactiveSelect, multiSelect } from "../src/select.ts";
 
 const theme = createTheme({ env: { NO_COLOR: "1" } as NodeJS.ProcessEnv, isTty: true });
 
@@ -218,30 +218,9 @@ test("a multi-select restores the cursor and leaves raw mode", async () => {
 });
 
 
-// Terminals batch and split keypresses. Decoding a chunk as exactly one key
-// dropped coalesced input and, worse, read the escape of a split arrow as
-// Escape - abandoning the selection. This is common on Windows.
-
-test("readKeys pulls every key out of one chunk", () => {
-  assert.deepEqual(readKeys(" a\r").keys, [" ", "a", "\r"]);
-});
-
-test("readKeys keeps an arrow sequence whole, even several at once", () => {
-  assert.deepEqual(readKeys("\u001b[B\u001b[B").keys, ["\u001b[B", "\u001b[B"]);
-});
-
-test("readKeys holds back a split escape sequence instead of guessing", () => {
-  const first = readKeys("\u001b");
-  assert.deepEqual(first.keys, []);
-  assert.equal(first.pending, "\u001b");
-
-  // The rest arrives next read, and together they are one arrow.
-  assert.deepEqual(readKeys(first.pending + "[A").keys, ["\u001b[A"]);
-});
-
-test("readKeys treats a windows newline as one confirmation", () => {
-  assert.deepEqual(readKeys("\r\n").keys, ["\r\n"]);
-});
+// Terminals batch and split keypresses: two keys can arrive in one read, and an
+// escape sequence can be split across two. Decoding is node's job now, and
+// these are the behaviours that has to produce.
 
 test("an arrow split across reads moves, and does not cancel", async () => {
   const { picked, press } = multiSelecting();

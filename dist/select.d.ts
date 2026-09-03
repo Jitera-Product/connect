@@ -18,16 +18,19 @@ export declare function chooseFrom<T>({ items, prompt, label, theme, }: {
     readonly label: (item: T) => string;
     readonly theme: Theme;
 }): Promise<T>;
-export declare function readKeys(buffer: string): {
-    keys: string[];
-    pending: string;
-};
+export interface Key {
+    readonly name?: string;
+    readonly ctrl?: boolean;
+    readonly meta?: boolean;
+    readonly shift?: boolean;
+    readonly sequence?: string;
+}
 export interface SelectInput {
     setRawMode?(mode: boolean): unknown;
     resume?(): unknown;
     pause?(): unknown;
-    on(event: "data", listener: (chunk: Buffer | string) => void): unknown;
-    off(event: "data", listener: (chunk: Buffer | string) => void): unknown;
+    on(event: "keypress", listener: (str: string | undefined, key: Key) => void): unknown;
+    off(event: "keypress", listener: (str: string | undefined, key: Key) => void): unknown;
 }
 export interface SelectOutput {
     write(chunk: string): unknown;
@@ -40,7 +43,38 @@ export interface SelectOptions<T> {
     readonly input: SelectInput;
     readonly output: SelectOutput;
 }
+type Action = {
+    readonly kind: "move";
+    readonly delta: 1 | -1;
+} | {
+    readonly kind: "jump";
+    readonly index: number;
+} | {
+    readonly kind: "confirm";
+} | {
+    readonly kind: "cancel";
+} | {
+    readonly kind: "none";
+};
+export declare function parseKey(str: string | undefined, key: Key, count: number): Action;
 export declare function interactiveSelect<T>({ items, prompt, label, theme, input, output }: SelectOptions<T>): Promise<T>;
+type MultiAction = {
+    readonly kind: "move";
+    readonly delta: 1 | -1;
+} | {
+    readonly kind: "toggle";
+} | {
+    readonly kind: "all";
+} | {
+    readonly kind: "none_of_them";
+} | {
+    readonly kind: "confirm";
+} | {
+    readonly kind: "cancel";
+} | {
+    readonly kind: "none";
+};
+export declare function parseMultiKey(str: string | undefined, key: Key): MultiAction;
 export interface MultiSelectOptions<T> extends SelectOptions<T> {
     readonly selected?: (item: T) => boolean;
     readonly viewport?: number;
@@ -54,4 +88,5 @@ export declare function chooseManyFrom<T>({ items, prompt, label, theme, selecte
     readonly theme: Theme;
     readonly selected?: (item: T) => boolean;
 }): Promise<T[]>;
+export {};
 //# sourceMappingURL=select.d.ts.map
