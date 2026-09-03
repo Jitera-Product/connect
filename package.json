@@ -1,6 +1,6 @@
 {
   "name": "@jitera/connect",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "type": "module",
   "description": "Connect AI coding assistants to Jitera projects: documentation, source, and shared project memory",
   "license": "Apache-2.0",
