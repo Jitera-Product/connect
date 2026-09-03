@@ -55,6 +55,70 @@ export async function chooseFrom({ items, prompt, label, theme, }) {
         throw new InvalidChoiceError(answer);
     return picked;
 }
+// Terminals do not deliver one keypress per read. Two keys pressed quickly
+// arrive in one chunk, and an escape sequence can be split across chunks - the
+// escape in one read, "[A" in the next. Decoding a chunk as a single key meant
+// a coalesced chunk did nothing, and, worse, the leading escape of a split
+// arrow read as Escape and cancelled the picker. On Windows that is common
+// enough that arrow keys could abandon a selection outright.
+//
+// So keys are pulled from a running buffer, and a trailing incomplete sequence
+// is held back until the rest of it arrives. A lone escape is only a real
+// Escape once nothing follows it, which is what the flush timer settles.
+const INCOMPLETE_ESCAPE = /^\u001b(\[|O)?$/;
+const ESCAPE_FLUSH_MS = 50;
+export function readKeys(buffer) {
+    const keys = [];
+    let rest = buffer;
+    while (rest.length > 0) {
+        if (INCOMPLETE_ESCAPE.test(rest))
+            return { keys, pending: rest };
+        if (rest.startsWith("\u001b[") || rest.startsWith("\u001bO")) {
+            keys.push(rest.slice(0, 3));
+            rest = rest.slice(3);
+            continue;
+        }
+        // "\r\n" is one confirmation, not two.
+        if (rest.startsWith("\r\n")) {
+            keys.push("\r\n");
+            rest = rest.slice(2);
+            continue;
+        }
+        keys.push(rest.slice(0, 1));
+        rest = rest.slice(1);
+    }
+    return { keys, pending: "" };
+}
+function createKeyReader() {
+    let pending = "";
+    let timer;
+    const clear = () => {
+        if (timer)
+            clearTimeout(timer);
+        timer = undefined;
+    };
+    return {
+        feed(chunk, onKey) {
+            clear();
+            const { keys, pending: rest } = readKeys(pending + chunk.toString());
+            pending = rest;
+            for (const key of keys)
+                onKey(key);
+            // Nothing completed it, so it was the key itself.
+            if (pending === "\u001b") {
+                timer = setTimeout(() => {
+                    pending = "";
+                    onKey("\u001b");
+                }, ESCAPE_FLUSH_MS);
+                timer.unref?.();
+            }
+        },
+        stop() {
+            clear();
+            pending = "";
+        },
+    };
+}
 function parseKey(sequence, count) {
     if (sequence === "" || sequence === "")
         return { kind: "cancel" };
@@ -93,14 +157,22 @@ export function interactiveSelect({ items, prompt, label, theme, input, output }
         // Everything drawn (blank line, prompt, blank line, one line per item) is
         // erased again on the way out, so the caller decides what remains on screen.
         const finish = () => {
+            reader.stop();
             input.off("data", onData);
             input.setRawMode?.(false);
             input.pause?.();
             output.write(`[${items.length + 3}A\r[J`);
             output.write("[?25h");
         };
+        const reader = createKeyReader();
         const onData = (chunk) => {
-            const action = parseKey(chunk.toString(), items.length);
+            reader.feed(chunk, (key) => onKey(key));
+        };
+        let settled = false;
+        const onKey = (key) => {
+            if (settled)
+                return;
+            const action = parseKey(key, items.length);
             if (action.kind === "move") {
                 highlighted = (highlighted + action.delta + items.length) % items.length;
                 repaint();
@@ -110,10 +182,12 @@ export function interactiveSelect({ items, prompt, label, theme, input, output }
                 repaint();
             }
             else if (action.kind === "confirm") {
+                settled = true;
                 finish();
                 resolve(items[highlighted]);
             }
             else if (action.kind === "cancel") {
+                settled = true;
                 finish();
                 reject(new SelectCancelledError());
             }
@@ -196,14 +270,22 @@ export function multiSelect({ items, prompt, label, theme, input, output, select
             paintItems();
         };
         const finish = () => {
+            reader.stop();
             input.off("data", onData);
             input.setRawMode?.(false);
             input.pause?.();
             output.write(`\u001b[${painted + 3}A\r\u001b[J`);
             output.write("\u001b[?25h");
         };
+        const reader = createKeyReader();
         const onData = (chunk) => {
-            const action = parseMultiKey(chunk.toString());
+            reader.feed(chunk, (key) => onKey(key));
+        };
+        let settled = false;
+        const onKey = (key) => {
+            if (settled)
+                return;
+            const action = parseMultiKey(key);
             if (action.kind === "move") {
                 highlighted = (highlighted + action.delta + items.length) % items.length;
                 repaint();
@@ -221,10 +303,12 @@ export function multiSelect({ items, prompt, label, theme, input, output, select
                 repaint();
             }
             else if (action.kind === "confirm") {
+                settled = true;
                 finish();
                 resolve(items.filter((_item, index) => ticked[index]));
             }
             else if (action.kind === "cancel") {
+                settled = true;
                 finish();
                 reject(new SelectCancelledError());
             }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
 import { createTheme } from "../src/theme.ts";
-import { SelectCancelledError, interactiveSelect, multiSelect } from "../src/select.ts";
+import { SelectCancelledError, interactiveSelect, multiSelect, readKeys } from "../src/select.ts";
 
 const theme = createTheme({ env: { NO_COLOR: "1" } as NodeJS.ProcessEnv, isTty: true });
 
@@ -215,4 +215,51 @@ test("a multi-select restores the cursor and leaves raw mode", async () => {
   await picked;
   assert.deepEqual(input.rawModes, [true, false]);
   assert.match(rendered(), /\u001b\[\?25h/, "the cursor is shown again");
+});
+
+
+// Terminals batch and split keypresses. Decoding a chunk as exactly one key
+// dropped coalesced input and, worse, read the escape of a split arrow as
+// Escape - abandoning the selection. This is common on Windows.
+
+test("readKeys pulls every key out of one chunk", () => {
+  assert.deepEqual(readKeys(" a\r").keys, [" ", "a", "\r"]);
+});
+
+test("readKeys keeps an arrow sequence whole, even several at once", () => {
+  assert.deepEqual(readKeys("\u001b[B\u001b[B").keys, ["\u001b[B", "\u001b[B"]);
+});
+
+test("readKeys holds back a split escape sequence instead of guessing", () => {
+  const first = readKeys("\u001b");
+  assert.deepEqual(first.keys, []);
+  assert.equal(first.pending, "\u001b");
+
+  // The rest arrives next read, and together they are one arrow.
+  assert.deepEqual(readKeys(first.pending + "[A").keys, ["\u001b[A"]);
+});
+
+test("readKeys treats a windows newline as one confirmation", () => {
+  assert.deepEqual(readKeys("\r\n").keys, ["\r\n"]);
+});
+
+test("an arrow split across reads moves, and does not cancel", async () => {
+  const { picked, press } = multiSelecting();
+  // What a terminal can deliver: the escape alone, then the remainder.
+  press("\u001b", "[B");
+  press(" ", "\r");
+  assert.deepEqual(await picked, ["beta"]);
+});
+
+test("two keys arriving in one chunk are both applied", async () => {
+  const { picked, press } = multiSelecting();
+  press("\u001b[B ");
+  press("\r");
+  assert.deepEqual(await picked, ["beta"]);
+});
+
+test("a real escape still cancels once nothing follows it", async () => {
+  const { picked, press } = multiSelecting();
+  press("\u001b");
+  await assert.rejects(picked, (error: Error) => error instanceof SelectCancelledError);
 });

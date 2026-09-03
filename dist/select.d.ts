@@ -18,6 +18,10 @@ export declare function chooseFrom<T>({ items, prompt, label, theme, }: {
     readonly label: (item: T) => string;
     readonly theme: Theme;
 }): Promise<T>;
+export declare function readKeys(buffer: string): {
+    keys: string[];
+    pending: string;
+};
 export interface SelectInput {
     setRawMode?(mode: boolean): unknown;
     resume?(): unknown;

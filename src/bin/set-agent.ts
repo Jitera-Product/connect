@@ -183,8 +183,19 @@ await runCommand(async () => {
   }
 
   if (chosen.length === 0) {
+    // Reading every agent is recorded by leaving `agents` out, so the file is
+    // unchanged and the run looks like it did nothing. Say what happened and
+    // give the ids, so choosing some is one command away rather than a hunt.
     process.stdout.write(
-      `\n  ${theme.dim("nothing selected, so this repository reads every agent.")}\n`
+      `\n  ${theme.dim("nothing selected, so this repository reads every agent.")}\n` +
+        `  ${theme.dim("that is recorded by leaving \"agents\" out of .jitera.json.")}\n\n` +
+        `  ${theme.dim("to read only some, re-run with their ids:")}\n`
+    );
+    for (const agent of agents) {
+      process.stdout.write(`    ${theme.dim("·")} ${agent.name} ${theme.accent(agent.id)}\n`);
+    }
+    process.stdout.write(
+      `\n  ${theme.accent(`npx @jitera/connect set-agent --agent=${agents[0]?.id ?? "<id>"}`)}\n`
     );
   }
 
