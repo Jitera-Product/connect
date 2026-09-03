@@ -174,3 +174,17 @@ test("a non-array agents field is ignored rather than trusted", () => {
   );
   assert.equal(readProjectMarker(root)?.agents, undefined);
 });
+
+
+test("a saved selection is on disk afterwards, not just reported", () => {
+  // The write is verified by reading it back, because a save that silently
+  // failed looks exactly like a command that did nothing.
+  const root = isolatedTmpdir();
+  writeProjectMarker(root, { environment: "studio-06", project: "p1" });
+  const written = writeProjectMarker(root, { agents: ["a1", "a2"] });
+
+  const onDisk = JSON.parse(readFileSync(written.path, "utf8")) as Record<string, unknown>;
+  assert.deepEqual(onDisk["agents"], ["a1", "a2"]);
+  assert.equal(onDisk["project"], "p1");
+  assert.equal(written.changed, true);
+});

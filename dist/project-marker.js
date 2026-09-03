@@ -90,8 +90,19 @@ export function writeProjectMarker(root, marker, dryRun = false) {
     }
     const serialized = `${JSON.stringify(next, undefined, 2)}\n`;
     const changed = before !== serialized;
-    if (changed && !dryRun)
+    if (changed && !dryRun) {
         writeFileSync(path, serialized, "utf8");
+        // Read it back rather than trust the write. The path came from `git
+        // rev-parse`, which does not always spell it the way this platform reads
+        // it, and a write can also be undone by permissions or a file watcher. A
+        // selection that silently failed to land looks exactly like a command that
+        // did nothing, which is impossible to report and no fun to debug.
+        const landed = existsSync(path) ? readFileSync(path, "utf8") : undefined;
+        if (landed !== serialized) {
+            throw new Error(`wrote ${path} but reading it back did not return what was written. ` +
+                `Check that the path is writable and is the file you expect.`);
+        }
+    }
     return { path, changed };
 }
 //# sourceMappingURL=project-marker.js.map
