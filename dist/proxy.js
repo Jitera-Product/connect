@@ -26,11 +26,32 @@ export function resolveAgents(cwd, env = process.env) {
 // the server through this proxy, so the repository's choice is applied here
 // rather than relying on every client to know about it.
 const AGENT_SCOPED_TOOLS = new Set(["recall_jitera_memory", "gather_jitera_context"]);
+// Writing is not narrowing: memory goes to exactly one place, so a selection of
+// several says nothing about which. One selected agent does say it - it is the
+// only one this repository reads, so filing it anywhere else would hide it from
+// the very sessions that chose it. Anything else stays project-wide, which
+// every agent reads.
+const AGENT_PLACED_TOOL = "remember_jitera_memory";
 export function withAgentSelection(request, agents) {
     if (!agents || agents.length === 0 || request.method !== "tools/call")
         return request;
     const params = request.params;
-    if (!params?.name || !AGENT_SCOPED_TOOLS.has(params.name))
+    if (!params?.name)
+        return request;
+    if (params.name === AGENT_PLACED_TOOL) {
+        if (agents.length !== 1)
+            return request;
+        const args = params.arguments;
+        if (args !== undefined && (typeof args !== "object" || Array.isArray(args)))
+            return request;
+        if (args && "agent" in args)
+            return request;
+        return {
+            ...request,
+            params: { ...params, arguments: { ...(args ?? {}), agent: agents[0] } },
+        };
+    }
+    if (!AGENT_SCOPED_TOOLS.has(params.name))
         return request;
     // A caller that named agents itself has been more specific than the
     // repository default, so leave it alone.

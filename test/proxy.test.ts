@@ -371,3 +371,43 @@ test("a call with no arguments at all still gets the selection", () => {
   const params = out.params as { arguments: Record<string, unknown> };
   assert.deepEqual(params.arguments["agents"], ["a1"]);
 });
+
+
+// Memory goes to exactly one place, so the repository's selection only decides
+// where when it names a single agent.
+const remember = (args: Record<string, unknown> = {}) => ({
+  jsonrpc: "2.0" as const,
+  id: 1,
+  method: "tools/call",
+  params: { name: "remember_jitera_memory", arguments: args },
+});
+const argsOf = (request: ReturnType<typeof remember>) =>
+  (request.params as { arguments?: Record<string, unknown> }).arguments ?? {};
+
+test("one selected agent is where a memory write is filed", () => {
+  const out = withAgentSelection(remember({ name: "Checkout" }), ["agent-1"]);
+  assert.equal(argsOf(out as ReturnType<typeof remember>)["agent"], "agent-1");
+});
+
+test("several selected agents leave the write project-wide", () => {
+  // Nothing in the selection says which of them owns it.
+  const out = withAgentSelection(remember({ name: "Checkout" }), ["agent-1", "agent-2"]);
+  assert.equal("agent" in argsOf(out as ReturnType<typeof remember>), false);
+});
+
+test("no selection leaves the write project-wide", () => {
+  const out = withAgentSelection(remember({ name: "Checkout" }), undefined);
+  assert.equal("agent" in argsOf(out as ReturnType<typeof remember>), false);
+});
+
+test("a caller that named an agent itself is left alone", () => {
+  const out = withAgentSelection(remember({ agent: "chosen" }), ["agent-1"]);
+  assert.equal(argsOf(out as ReturnType<typeof remember>)["agent"], "chosen");
+});
+
+test("a memory write never receives the plural agents filter", () => {
+  // `agents` narrows a read; it means nothing to a write and the server would
+  // reject it.
+  const out = withAgentSelection(remember({ name: "Checkout" }), ["agent-1"]);
+  assert.equal("agents" in argsOf(out as ReturnType<typeof remember>), false);
+});
