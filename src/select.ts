@@ -356,7 +356,11 @@ export function multiSelect<T>({
 
     output.write("\u001b[?25l");
     output.write(
-      `\n  ${theme.bold(prompt)} ${theme.dim("↑/↓ move · space select · a all · n none · enter save")}\n\n`
+      `\n  ${theme.bold(prompt)} ${theme.dim(
+        requireOne
+          ? "↑/↓ move · space select · a all · enter save"
+          : "↑/↓ move · space select · a all · n none · enter save"
+      )}\n\n`
     );
     paintItems();
 

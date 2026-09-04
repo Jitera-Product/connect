@@ -263,7 +263,9 @@ export function multiSelect({ items, prompt, label, theme, input, output, select
             }
         };
         output.write("\u001b[?25l");
-        output.write(`\n  ${theme.bold(prompt)} ${theme.dim("↑/↓ move · space select · a all · n none · enter save")}\n\n`);
+        output.write(`\n  ${theme.bold(prompt)} ${theme.dim(requireOne
+            ? "↑/↓ move · space select · a all · enter save"
+            : "↑/↓ move · space select · a all · n none · enter save")}\n\n`);
         paintItems();
         // Node reassembles split escape sequences and names each key, so the same
         // arrow works whatever the terminal sends. The timeout is how long a lone
