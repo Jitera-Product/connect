@@ -236,6 +236,9 @@ function oneLine(text: string, width: number): string {
 }
 
 export interface MultiSelectOptions<T> extends SelectOptions<T> {
+  // Confirming nothing is almost always "I am done" rather than a deliberate
+  // empty choice, so callers that treat empty as meaningful can ask for one.
+  readonly requireOne?: boolean;
   // Items to start ticked, so re-running the command shows the current state
   // rather than a blank slate.
   readonly selected?: (item: T) => boolean;
@@ -258,6 +261,7 @@ export function multiSelect<T>({
   selected,
   viewport,
   columns,
+  requireOne = false,
 }: MultiSelectOptions<T>): Promise<T[]> {
   if (items.length === 0) {
     return Promise.reject(new Error("there is nothing to select from"));
@@ -331,6 +335,15 @@ export function multiSelect<T>({
         ticked.fill(false);
         repaint();
       } else if (action.kind === "confirm") {
+        // Confirming an empty list reads as "I am done", not "I meant none of
+        // them", and saving it silently recorded a choice nobody made. Say what
+        // is missing and stay open; "n" then enter is how you mean none.
+        if (requireOne && !ticked.some(Boolean)) {
+          output.write(`\u001b[${painted + 1}A\r\u001b[2K`);
+          output.write(`  ${theme.dim("nothing ticked yet - press space to choose one, or a to take them all")}\n`);
+          paintItems();
+          return;
+        }
         settled = true;
         finish();
         resolve(items.filter((_item, index) => ticked[index]));
@@ -364,12 +377,14 @@ export async function chooseManyFrom<T>({
   label,
   theme,
   selected,
+  requireOne = false,
 }: {
   readonly items: readonly T[];
   readonly prompt: string;
   readonly label: (item: T) => string;
   readonly theme: Theme;
   readonly selected?: (item: T) => boolean;
+  readonly requireOne?: boolean;
 }): Promise<T[]> {
   if (process.stdin.isTTY && process.stdout.isTTY) {
     return multiSelect({
@@ -379,6 +394,7 @@ export async function chooseManyFrom<T>({
       theme,
       input: process.stdin,
       output: process.stdout,
+      requireOne,
       ...(selected ? { selected } : {}),
     });
   }
@@ -391,10 +407,17 @@ export async function chooseManyFrom<T>({
     );
   });
   const answer = await ask(
-    `\n  ${theme.dim(`Numbers, comma separated, or blank for all [1-${items.length}]`)} `
+    `\n  ${theme.dim(
+      requireOne
+        ? `Numbers, comma separated [1-${items.length}]`
+        : `Numbers, comma separated, or blank for all [1-${items.length}]`
+    )} `
   );
 
-  if (!answer) return [];
+  if (!answer) {
+    if (requireOne) throw new InvalidChoiceError("nothing, and one is required");
+    return [];
+  }
 
   const picked: T[] = [];
   for (const part of answer.split(",")) {

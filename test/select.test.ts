@@ -134,7 +134,8 @@ test("an empty list rejects instead of hanging", async () => {
 
 function multiSelecting(
   items: readonly string[] = ["alpha", "beta", "gamma"],
-  selected?: (item: string) => boolean
+  selected?: (item: string) => boolean,
+  requireOne = false
 ) {
   const input = new FakeInput();
   const written: string[] = [];
@@ -145,6 +146,7 @@ function multiSelecting(
     theme,
     input,
     output: { write: (chunk: string) => written.push(chunk) },
+    requireOne,
     ...(selected ? { selected } : {}),
   });
   const press = (...keys: string[]) => {
@@ -241,4 +243,32 @@ test("a real escape still cancels once nothing follows it", async () => {
   const { picked, press } = multiSelecting();
   press("\u001b");
   await assert.rejects(picked, (error: Error) => error instanceof SelectCancelledError);
+});
+
+
+// The video's failure: the picker opened, enter was pressed without space, and
+// a choice nobody made was recorded as "every agent" - which writes no agents
+// key, so the file looked untouched and the command looked like a no-op.
+
+test("confirming an empty picker does not settle it when one is required", async () => {
+  const { picked, press, rendered } = multiSelecting(["alpha", "beta"], undefined, true);
+  press("\r");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(rendered(), /nothing ticked yet/);
+
+  // Still open, so a real answer can still be given.
+  press(" ", "\r");
+  assert.deepEqual(await picked, ["alpha"]);
+});
+
+test("requiring one does not stop a deliberate select-all", async () => {
+  const { picked, press } = multiSelecting(["alpha", "beta"], undefined, true);
+  press("a", "\r");
+  assert.deepEqual(await picked, ["alpha", "beta"]);
+});
+
+test("without the requirement an empty confirm still means none", async () => {
+  const { picked, press } = multiSelecting(["alpha", "beta"]);
+  press("\r");
+  assert.deepEqual(await picked, []);
 });

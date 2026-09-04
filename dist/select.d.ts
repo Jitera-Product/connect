@@ -76,17 +76,19 @@ type MultiAction = {
 };
 export declare function parseMultiKey(str: string | undefined, key: Key): MultiAction;
 export interface MultiSelectOptions<T> extends SelectOptions<T> {
+    readonly requireOne?: boolean;
     readonly selected?: (item: T) => boolean;
     readonly viewport?: number;
     readonly columns?: number;
 }
-export declare function multiSelect<T>({ items, prompt, label, theme, input, output, selected, viewport, columns, }: MultiSelectOptions<T>): Promise<T[]>;
-export declare function chooseManyFrom<T>({ items, prompt, label, theme, selected, }: {
+export declare function multiSelect<T>({ items, prompt, label, theme, input, output, selected, viewport, columns, requireOne, }: MultiSelectOptions<T>): Promise<T[]>;
+export declare function chooseManyFrom<T>({ items, prompt, label, theme, selected, requireOne, }: {
     readonly items: readonly T[];
     readonly prompt: string;
     readonly label: (item: T) => string;
     readonly theme: Theme;
     readonly selected?: (item: T) => boolean;
+    readonly requireOne?: boolean;
 }): Promise<T[]>;
 export {};
 //# sourceMappingURL=select.d.ts.map

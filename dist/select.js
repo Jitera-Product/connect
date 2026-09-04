@@ -174,7 +174,7 @@ function oneLine(text, width) {
 // Checkbox selection: space toggles, enter confirms. Returns the ticked items,
 // which may legitimately be none — "none" means "do not narrow", and the
 // caller decides what that implies.
-export function multiSelect({ items, prompt, label, theme, input, output, selected, viewport, columns, }) {
+export function multiSelect({ items, prompt, label, theme, input, output, selected, viewport, columns, requireOne = false, }) {
     if (items.length === 0) {
         return Promise.reject(new Error("there is nothing to select from"));
     }
@@ -243,6 +243,15 @@ export function multiSelect({ items, prompt, label, theme, input, output, select
                 repaint();
             }
             else if (action.kind === "confirm") {
+                // Confirming an empty list reads as "I am done", not "I meant none of
+                // them", and saving it silently recorded a choice nobody made. Say what
+                // is missing and stay open; "n" then enter is how you mean none.
+                if (requireOne && !ticked.some(Boolean)) {
+                    output.write(`\u001b[${painted + 1}A\r\u001b[2K`);
+                    output.write(`  ${theme.dim("nothing ticked yet - press space to choose one, or a to take them all")}\n`);
+                    paintItems();
+                    return;
+                }
                 settled = true;
                 finish();
                 resolve(items.filter((_item, index) => ticked[index]));
@@ -266,7 +275,7 @@ export function multiSelect({ items, prompt, label, theme, input, output, select
     });
 }
 // Terminal picker when there is one, a numbered list everywhere else.
-export async function chooseManyFrom({ items, prompt, label, theme, selected, }) {
+export async function chooseManyFrom({ items, prompt, label, theme, selected, requireOne = false, }) {
     if (process.stdin.isTTY && process.stdout.isTTY) {
         return multiSelect({
             items,
@@ -275,6 +284,7 @@ export async function chooseManyFrom({ items, prompt, label, theme, selected, })
             theme,
             input: process.stdin,
             output: process.stdout,
+            requireOne,
             ...(selected ? { selected } : {}),
         });
     }
@@ -283,9 +293,14 @@ export async function chooseManyFrom({ items, prompt, label, theme, selected, })
         const mark = selected?.(item) ? theme.ok("x") : " ";
         process.stdout.write(`    ${theme.accent(String(index + 1).padStart(2))} [${mark}] ${label(item)}\n`);
     });
-    const answer = await ask(`\n  ${theme.dim(`Numbers, comma separated, or blank for all [1-${items.length}]`)} `);
-    if (!answer)
+    const answer = await ask(`\n  ${theme.dim(requireOne
+        ? `Numbers, comma separated [1-${items.length}]`
+        : `Numbers, comma separated, or blank for all [1-${items.length}]`)} `);
+    if (!answer) {
+        if (requireOne)
+            throw new InvalidChoiceError("nothing, and one is required");
         return [];
+    }
     const picked = [];
     for (const part of answer.split(",")) {
         const index = Number(part.trim()) - 1;
