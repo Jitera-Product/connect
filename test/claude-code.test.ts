@@ -55,18 +55,33 @@ test("the marketplace is added before the plugin is installed", () => {
   assert.equal(install.args[2], `${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
 });
 
-test("the marketplace clone is refreshed so the manifest matches this cli", () => {
-  const { run, calls } = runner();
+const ALREADY_ADDED = {
+  "plugin marketplace add": { status: 1, stderr: "marketplace already exists" },
+};
+
+test("an existing marketplace clone is refreshed so the manifest matches this cli", () => {
+  const { run, calls } = runner(ALREADY_ADDED);
   installClaudeCodePlugin({ apiKey: "sk", environment: "studio", run });
   const commands = calls.map((c) => c.args.join(" "));
   const update = commands.findIndex((c) => c === `plugin marketplace update ${MARKETPLACE_NAME}`);
   const install = commands.findIndex((c) => c.startsWith("plugin install"));
-  assert.ok(update !== -1, "must refresh the marketplace clone");
+  assert.ok(update !== -1, "an existing clone can be stale, so it must be refreshed");
   assert.ok(update < install, "must refresh before installing");
+});
+
+test("a marketplace just added is not fetched a second time", () => {
+  // `add` cloned it moments ago, so refreshing is a network round trip for a
+  // repository that cannot be stale yet. Installing is slow enough already.
+  const { run, calls } = runner();
+  installClaudeCodePlugin({ apiKey: "sk", environment: "studio", run });
+  const commands = calls.map((c) => c.args.join(" "));
+  assert.equal(commands.includes(`plugin marketplace update ${MARKETPLACE_NAME}`), false);
+  assert.ok(commands.some((c) => c.startsWith("plugin install")), "still installs");
 });
 
 test("a failed marketplace refresh does not stop the install", () => {
   const { run } = runner({
+    ...ALREADY_ADDED,
     "plugin marketplace update": { status: 1, stderr: "temporarily offline" },
   });
   const result = installClaudeCodePlugin({ apiKey: "sk", environment: "studio", run });

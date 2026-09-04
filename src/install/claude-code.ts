@@ -8,8 +8,16 @@ export interface CommandRunner {
   (command: string, args: readonly string[]): { status: number; stdout: string; stderr: string };
 }
 
+// Installing shells out to `claude` several times, and each one can reach the
+// network. Without a bound, an unreachable marketplace is indistinguishable
+// from a slow install: it just sits there. This fails instead.
+const STEP_TIMEOUT_MS = 120_000;
+
 const defaultRunner: CommandRunner = (command, args) => {
-  const result = spawnSync(command, [...args], { encoding: "utf8" });
+  const result = spawnSync(command, [...args], {
+    encoding: "utf8",
+    timeout: STEP_TIMEOUT_MS,
+  });
   return {
     status: result.status ?? 1,
     stdout: result.stdout ?? "",
@@ -49,7 +57,13 @@ export function installClaudeCodePlugin({
   // A stale clone serves an old manifest whose userConfig schema no longer
   // matches this cli, so the install below would reject --config. Best-effort:
   // the "not applied" check still catches a refresh that failed.
-  run("claude", ["plugin", "marketplace", "update", MARKETPLACE_NAME]);
+  //
+  // Only a clone that was already there can be stale. `add` having just made
+  // one means it is current, and refreshing it is a second network round trip
+  // for a repository fetched moments ago.
+  if (marketplace.status !== 0) {
+    run("claude", ["plugin", "marketplace", "update", MARKETPLACE_NAME]);
+  }
 
   // `plugin install` no-ops on an existing install without re-resolving the
   // version or re-applying --config. Removing first makes install idempotent.
