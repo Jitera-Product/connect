@@ -125,6 +125,25 @@ function errorResponse(id: string | number, code: number, message: string): stri
   return JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } });
 }
 
+// The server can say a request named no project; only the client knows whether
+// that is because there is no .jitera.json, and where it looked. Saying "bind
+// this repository" to someone whose repository is bound is what made this so
+// hard to report, so the half each side knows is joined up here.
+export function explainMissingBinding(response: unknown, searched: readonly string[]): void {
+  const content = (response as { result?: { content?: { type?: string; text?: string }[] } })
+    ?.result?.content;
+  if (!Array.isArray(content)) return;
+
+  for (const part of content) {
+    if (part?.type !== "text" || typeof part.text !== "string") continue;
+    if (!part.text.includes("No project is selected")) continue;
+    part.text +=
+      `\n\nThis workspace has no .jitera.json, so no project was sent. ` +
+      `Looked in: ${searched.join(", ")}. ` +
+      `Run \`npx @jitera/connect init\` at the repository root.`;
+  }
+}
+
 function injectInstructions(response: unknown, instructions: string): void {
   const result = (response as { result?: Record<string, unknown> } | undefined)?.result;
   if (result && typeof result === "object" && !result["instructions"]) {
@@ -157,15 +176,19 @@ export async function runProxy(
       // terminal beside a session that is already open, and a binding that
       // only took effect after restarting the assistant looked like the
       // commands had done nothing.
+      const boundTo = resolveProjectUuid(process.env) ?? projectUuid;
       response = await postRpc(
         withAgentSelection(request, resolveAgents(process.cwd(), process.env) ?? agents),
         {
           url,
           apiKey,
-          projectUuid: resolveProjectUuid(process.env) ?? projectUuid,
+          projectUuid: boundTo,
           timeoutMs: REQUEST_TIMEOUT_MS,
         }
       );
+      if (!boundTo) {
+        explainMissingBinding(response, markerSearchPath(process.env, process.cwd()));
+      }
     } catch (error) {
       const message = error instanceof McpCallError ? error.message : String(error);
       log.write(`jitera-connect proxy: ${message}\n`);

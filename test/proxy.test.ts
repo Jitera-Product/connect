@@ -5,6 +5,7 @@ import { PassThrough } from "node:stream";
 
 import {
   configFromEnvironment,
+  explainMissingBinding,
   markerSearchPath,
   resolveProjectUuid,
   runProxy,
@@ -519,4 +520,41 @@ test("the agent selection is found through the workspace claude code names", asy
     CLAUDE_PROJECT_DIR: repo,
   } as NodeJS.ProcessEnv);
   assert.deepEqual(found, ["a-9"]);
+});
+
+
+// Neither side can explain this alone: the server knows a request named no
+// project, the client knows whether a .jitera.json exists and where it looked.
+
+const refusal = (text: string) => ({ result: { content: [{ type: "text", text }] } });
+
+test("a no-project refusal gains the reason only the client knows", () => {
+  const response = refusal(
+    "No project is selected, so there is nothing to list agents from."
+  );
+  explainMissingBinding(response, ["/home/me", "/work/repo-a"]);
+
+  const text = response.result.content[0]!.text;
+  assert.match(text, /no \.jitera\.json/);
+  assert.match(text, /\/home\/me, \/work\/repo-a/);
+});
+
+test("a refusal that is not about the binding is left alone", () => {
+  // The server refuses for reasons of its own - a project the key cannot reach,
+  // a check it could not make - and those are not this.
+  const text = "This repository names a project, but this API key's owner cannot reach it.";
+  const response = refusal(text);
+  explainMissingBinding(response, ["/home/me"]);
+  assert.equal(response.result.content[0]!.text, text);
+});
+
+test("a successful result is never rewritten", () => {
+  const response = refusal("Found 2 agent(s): ...");
+  explainMissingBinding(response, ["/home/me"]);
+  assert.equal(response.result.content[0]!.text, "Found 2 agent(s): ...");
+});
+
+test("a response with no content is handled without throwing", () => {
+  assert.doesNotThrow(() => explainMissingBinding({ result: {} }, ["/x"]));
+  assert.doesNotThrow(() => explainMissingBinding(undefined, ["/x"]));
 });
