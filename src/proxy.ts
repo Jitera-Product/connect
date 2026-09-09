@@ -152,12 +152,20 @@ export async function runProxy(
 
     let response;
     try {
-      response = await postRpc(withAgentSelection(request, agents), {
-        url,
-        apiKey,
-        projectUuid: resolveProjectUuid(process.env) ?? projectUuid,
-        timeoutMs: REQUEST_TIMEOUT_MS,
-      });
+      // Both are read per request, not once at startup. The server outlives
+      // the commands that change them: `init` and `set-agent` are run in a
+      // terminal beside a session that is already open, and a binding that
+      // only took effect after restarting the assistant looked like the
+      // commands had done nothing.
+      response = await postRpc(
+        withAgentSelection(request, resolveAgents(process.cwd(), process.env) ?? agents),
+        {
+          url,
+          apiKey,
+          projectUuid: resolveProjectUuid(process.env) ?? projectUuid,
+          timeoutMs: REQUEST_TIMEOUT_MS,
+        }
+      );
     } catch (error) {
       const message = error instanceof McpCallError ? error.message : String(error);
       log.write(`jitera-connect proxy: ${message}\n`);

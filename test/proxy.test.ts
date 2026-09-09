@@ -476,3 +476,47 @@ test("a binding is found through the workspace claude code names", async () => {
   );
   assert.equal(found, "p-42");
 });
+
+
+test("a selection made after the server started is picked up", async () => {
+  // `set-agent` is run in a terminal beside an assistant that is already open.
+  // Reading it once at startup meant the choice took effect only after a
+  // restart, which looks like the command having done nothing.
+  const { writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { isolatedTmpdir } = await import("./helpers.ts");
+
+  const repo = isolatedTmpdir();
+  writeFileSync(join(repo, ".jitera.json"), JSON.stringify({ project: "p-1" }), "utf8");
+
+  const before = resolveAgents(repo, {} as NodeJS.ProcessEnv);
+  assert.equal(before, undefined);
+
+  writeFileSync(
+    join(repo, ".jitera.json"),
+    JSON.stringify({ project: "p-1", agents: ["a-1"] }),
+    "utf8"
+  );
+
+  assert.deepEqual(resolveAgents(repo, {} as NodeJS.ProcessEnv), ["a-1"]);
+});
+
+test("the agent selection is found through the workspace claude code names", async () => {
+  // Same reach as the project binding: a server started outside the repository
+  // must still find the selection.
+  const { writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { isolatedTmpdir } = await import("./helpers.ts");
+
+  const repo = isolatedTmpdir();
+  writeFileSync(
+    join(repo, ".jitera.json"),
+    JSON.stringify({ project: "p-1", agents: ["a-9"] }),
+    "utf8"
+  );
+
+  const found = resolveAgents("/definitely/not/the/repo", {
+    CLAUDE_PROJECT_DIR: repo,
+  } as NodeJS.ProcessEnv);
+  assert.deepEqual(found, ["a-9"]);
+});
