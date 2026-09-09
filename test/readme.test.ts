@@ -17,7 +17,8 @@ test("readme npx commands use the published package name", () => {
 });
 
 test("readme documents the environment flag for both clients", () => {
-  assert.match(readme, /--config environment=studio-\d{2}/);
+  // The pilot is chosen at login; the manual plugin-install form is no longer documented.
+  assert.match(readme, /login --env=studio-\d{2} --install/);
   assert.match(readme, /--env=studio-\d{2}/);
   assert.match(readme, /--env=studio-stage/);
 });

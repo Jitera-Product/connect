@@ -21,16 +21,15 @@ npx @jitera/connect login --env=studio-05 --install
 
 ## claude code
 
-```
-/plugin marketplace add jitera-product/connect
-/plugin install jitera-connect
-```
+`login --install` above adds the marketplace, installs the plugin and stores
+the key, so there is nothing to run inside claude code. a plugin installed by
+hand from the /plugin menu has no key and no environment; run `login --install`
+and it is configured in place.
 
 ## codex
 
-```
-codex plugin marketplace add jitera-product/connect
-```
+`login --install` configures codex too when it is installed, so there is
+nothing to add by hand.
 
 ## cursor
 
@@ -187,13 +186,14 @@ leaves it alone and says so. remove yours and run login again, or point
 
 ## pilot and staging environments
 
-claude code, at install:
+claude code:
 
 ```
-/plugin install jitera-connect --config environment=studio-05
+npx @jitera/connect login --env=studio-05 --install
 ```
 
-claude code, after installing:
+that installs the plugin already pointed at the pilot. to move a plugin that is
+already installed to another environment:
 
 ```
 /plugin configure jitera-connect
