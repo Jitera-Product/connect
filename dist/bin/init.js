@@ -131,7 +131,7 @@ await runCommand(async () => {
             const organisation = organisations.length > 1
                 ? await chooseFrom({
                     items: organisations,
-                    prompt: "Which organisation?",
+                    prompt: "Which team?",
                     label: (org) => `${org.name ?? org.slug}${org.personal ? " (personal)" : ""}`,
                     theme,
                 })

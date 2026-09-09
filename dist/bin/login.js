@@ -20,8 +20,8 @@ const USAGE = [
     "usage: npx @jitera/connect login [--env=<environment>] [options]",
     "",
     "  --env=studio-04      target a pilot; omit for production",
-    "  --org=<slug>         skip the organisation prompt",
-    "  --project=<uuid>     skip the organisation and project prompts",
+    "  --team=<slug>        skip the team prompt (--org= still works)",
+    "  --project=<uuid>     skip the team and project prompts",
     "  --read-only          create a read-only key (default is read + write)",
     "  --name=<name>        name for the created key",
     "  --json               print the result as json",
@@ -36,6 +36,8 @@ function parseArgs(argv) {
             args.environment = arg.slice("--env=".length);
         else if (arg.startsWith("--org="))
             args.organisation = arg.slice("--org=".length);
+        else if (arg.startsWith("--team="))
+            args.organisation = arg.slice("--team=".length);
         else if (arg.startsWith("--project="))
             args.project = arg.slice("--project=".length);
         else if (arg.startsWith("--name="))
@@ -198,8 +200,8 @@ await runCommand(async () => {
             process.stdout.write(`\n  ${theme.dim("Organisation")}  ${organisation?.name ?? organisation?.slug}\n`);
         }
         else if (!organisation && organisations.length > 1) {
-            organisation = await choose(organisations, "Which organisation?", (org) => `${org.name ?? org.slug}${org.personal ? " (personal)" : ""}`);
-            process.stdout.write(`\n  ${theme.dim("Organisation")}  ${organisation.name ?? organisation.slug}\n`);
+            organisation = await choose(organisations, "Which team?", (org) => `${org.name ?? org.slug}${org.personal ? " (personal)" : ""}`);
+            process.stdout.write(`\n  ${theme.dim("Team")}  ${organisation.name ?? organisation.slug}\n`);
         }
         let projects;
         try {
