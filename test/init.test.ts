@@ -21,16 +21,16 @@ function gitRepo(): { root: string; nested: string } {
   return { root, nested };
 }
 
-test("init writes both files at the repository root, from anywhere inside it", async () => {
-  const { root, nested } = gitRepo();
-  const { code, stdout } = await runNode(CONNECT, { args: ["init"], cwd: nested, env: OFFLINE });
+test("init writes both files where it is run", async () => {
+  const { root } = gitRepo();
+  const { code, stdout } = await runNode(CONNECT, { args: ["init"], cwd: root, env: OFFLINE });
 
   assert.equal(code, 0, stdout);
+  assert.match(stdout, /writing to/);
   const agents = readFileSync(join(root, "AGENTS.md"), "utf8");
   assert.match(agents, /Jitera project context/);
   assert.ok(!agents.includes("{{"), "template tokens must be rendered");
   assert.match(readFileSync(join(root, "CLAUDE.md"), "utf8"), /@AGENTS\.md/);
-  assert.ok(!existsSync(join(nested, "AGENTS.md")), "nothing may be written at the cwd");
 });
 
 test("init refuses to run outside a git repository", async () => {
@@ -44,11 +44,11 @@ test("init refuses to run outside a git repository", async () => {
 });
 
 test("init run twice leaves the files unchanged", async () => {
-  const { root, nested } = gitRepo();
-  await runNode(CONNECT, { args: ["init"], cwd: nested, env: OFFLINE });
+  const { root } = gitRepo();
+  await runNode(CONNECT, { args: ["init"], cwd: root, env: OFFLINE });
   const first = readFileSync(join(root, "AGENTS.md"), "utf8");
 
-  const { code } = await runNode(CONNECT, { args: ["init"], cwd: nested, env: OFFLINE });
+  const { code } = await runNode(CONNECT, { args: ["init"], cwd: root, env: OFFLINE });
   assert.equal(code, 0);
   assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), first);
 });
@@ -79,10 +79,10 @@ test("init preserves user content around the managed block", async () => {
 });
 
 test("init records the environment in a committable .jitera.json", async () => {
-  const { root, nested } = gitRepo();
+  const { root } = gitRepo();
   const { code } = await runNode(CONNECT, {
     args: ["init", "--env=studio-04"],
-    cwd: nested,
+    cwd: root,
     env: OFFLINE,
   });
   assert.equal(code, 0);
@@ -117,7 +117,7 @@ test("a dry run writes no marker either", async () => {
 test("init binds the project from a stored login session", async () => {
   const { writeFileSync } = await import("node:fs");
   const { stubServer } = await import("./helpers.ts");
-  const { root, nested } = gitRepo();
+  const { root } = gitRepo();
 
   const graphql = await stubServer((body, res) => {
     const op = (body as { operationName?: string }).operationName;
@@ -152,7 +152,7 @@ test("init binds the project from a stored login session", async () => {
 
   const { stdout, code } = await runNode(CONNECT, {
     args: ["init"],
-    cwd: nested,
+    cwd: root,
     env: { ...OFFLINE, JITERA_CONNECT_CONFIG_DIR: configDir },
   });
   await graphql.close();
@@ -188,4 +188,48 @@ test("init rejects an unknown environment before touching the network", async ()
   assert.equal(code, 2);
   assert.match(stderr, /studio-banana/);
   assert.ok(!existsSync(join(root, "AGENTS.md")));
+});
+
+
+// Where init writes: the directory it is run in. The reported case was a home
+// directory that is itself a git repository - init walked up to it and dropped
+// a CLAUDE.md there, which then governed every project beneath it.
+
+test("init refuses to write into a home directory that is a git repository", async () => {
+  const { root: home } = gitRepo();
+  const { code, stderr } = await runNode(CONNECT, {
+    args: ["init", "--project=2af7e51d-a048-4753-bc14-209ff1865bd8"],
+    cwd: home,
+    env: { ...OFFLINE, HOME: home },
+  });
+  assert.equal(code, 2);
+  assert.match(stderr, /every project beneath it/);
+  assert.ok(!existsSync(join(home, "CLAUDE.md")), "nothing may be written to home");
+  assert.ok(!existsSync(join(home, ".jitera.json")));
+});
+
+test("a project under a home-that-is-a-repo is bound in the project, not in home", async () => {
+  const { root: home } = gitRepo();
+  const proj = join(home, "Documents", "proj");
+  mkdirSync(proj, { recursive: true });
+  const { code, stdout } = await runNode(CONNECT, {
+    args: ["init", "--project=2af7e51d-a048-4753-bc14-209ff1865bd8"],
+    cwd: proj,
+    env: { ...OFFLINE, HOME: home },
+  });
+  assert.equal(code, 0, stdout);
+  assert.ok(existsSync(join(proj, ".jitera.json")), "bound where it was run");
+  assert.ok(existsSync(join(proj, "CLAUDE.md")));
+  assert.ok(!existsSync(join(home, "CLAUDE.md")), "and nothing at home");
+  assert.ok(!existsSync(join(home, ".jitera.json")));
+});
+
+test("init from a subfolder writes there and names the root it could have used", async () => {
+  const { root, nested } = gitRepo();
+  const { code, stdout } = await runNode(CONNECT, { args: ["init"], cwd: nested, env: OFFLINE });
+  assert.equal(code, 0, stdout);
+  assert.match(stdout, /inside the repository at/);
+  assert.match(stdout, new RegExp(`writing to .*${nested.split("/").pop()}`));
+  assert.ok(existsSync(join(nested, "AGENTS.md")), "written where it was run");
+  assert.ok(!existsSync(join(root, "AGENTS.md")), "not silently at the root");
 });

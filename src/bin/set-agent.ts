@@ -4,6 +4,8 @@ import { UnknownEnvironmentError } from "../environments.ts";
 import { loadCliSession, transportFor } from "../cli-session.ts";
 import { DeviceFlowError, refreshAccessToken } from "../device-flow.ts";
 import { GraphqlError, listAgents, type AgentSummary } from "../graphql.ts";
+import { dirname } from "node:path";
+
 import { resolveGitRoot } from "../install/project-root.ts";
 import { readProjectMarker, writeProjectMarker } from "../project-marker.ts";
 import {
@@ -89,7 +91,9 @@ await runCommand(async () => {
   }
 
   // The selection lives beside the project binding, so there has to be one.
-  const marker = readProjectMarker(projectRoot);
+  // Walk up from here rather than read the git root: init writes the binding
+  // where it is run, which may be a subfolder of the repository.
+  const marker = readProjectMarker(process.cwd());
   if (!marker?.project) {
     fail(
       marker
@@ -98,11 +102,12 @@ await runCommand(async () => {
         : "this repository is not bound to a project yet. Run: npx @jitera/connect init"
     );
   }
+  const markerDir = dirname(marker.path);
 
   function save(ids: readonly string[], names?: readonly string[]): never {
     let written;
     try {
-      written = writeProjectMarker(projectRoot as string, { agents: ids }, args.dryRun);
+      written = writeProjectMarker(markerDir, { agents: ids }, args.dryRun);
     } catch (error) {
       fail(`could not write .jitera.json: ${(error as Error).message}`);
     }

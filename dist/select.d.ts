@@ -12,6 +12,7 @@ export declare class NoInputError extends Error {
     readonly name = "NoInputError";
     constructor();
 }
+export declare function confirm(prompt: string): Promise<boolean>;
 export declare function chooseFrom<T>({ items, prompt, label, theme, }: {
     readonly items: readonly T[];
     readonly prompt: string;

@@ -223,3 +223,22 @@ test("an unwritable marker reports the reason instead of a stack trace", async (
   assert.match(stderr, /could not write \.jitera\.json/);
   assert.ok(!/at .*writeFileSync/.test(stderr), "no stack trace");
 });
+
+
+test("a binding in a subfolder is found from beneath it", async () => {
+  // init writes the binding where it is run, which may be a subfolder of the
+  // repository; set-agent must follow it there rather than read the git root.
+  const { root } = boundRepo();
+  const sub = join(root, "packages", "api");
+  mkdirSync(join(sub, "src"), { recursive: true });
+  writeFileSync(join(sub, ".jitera.json"), JSON.stringify({ environment: "studio", project: "p-sub" }), "utf8");
+
+  const { code } = await runNode(CONNECT, {
+    args: ["set-agent", "--agent=a-1"],
+    cwd: join(sub, "src"),
+    env: OFFLINE,
+  });
+  assert.equal(code, 0);
+  assert.deepEqual(markerIn(sub)["agents"], ["a-1"]);
+  assert.equal(markerIn(root)["agents"], undefined, "the root binding is untouched");
+});

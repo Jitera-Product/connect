@@ -4,6 +4,7 @@ import { UnknownEnvironmentError } from "../environments.js";
 import { loadCliSession, transportFor } from "../cli-session.js";
 import { DeviceFlowError, refreshAccessToken } from "../device-flow.js";
 import { GraphqlError, listAgents } from "../graphql.js";
+import { dirname } from "node:path";
 import { resolveGitRoot } from "../install/project-root.js";
 import { readProjectMarker, writeProjectMarker } from "../project-marker.js";
 import { InvalidChoiceError, NoInputError, SelectCancelledError, chooseManyFrom, } from "../select.js";
@@ -74,17 +75,20 @@ await runCommand(async () => {
         fail("this is not a git repository, and the binding belongs at a repository root.", 2);
     }
     // The selection lives beside the project binding, so there has to be one.
-    const marker = readProjectMarker(projectRoot);
+    // Walk up from here rather than read the git root: init writes the binding
+    // where it is run, which may be a subfolder of the repository.
+    const marker = readProjectMarker(process.cwd());
     if (!marker?.project) {
         fail(marker
             ? "this repository's .jitera.json records no project, so there are no agents to choose from. " +
                 "Run: npx @jitera/connect init --project=<uuid>"
             : "this repository is not bound to a project yet. Run: npx @jitera/connect init");
     }
+    const markerDir = dirname(marker.path);
     function save(ids, names) {
         let written;
         try {
-            written = writeProjectMarker(projectRoot, { agents: ids }, args.dryRun);
+            written = writeProjectMarker(markerDir, { agents: ids }, args.dryRun);
         }
         catch (error) {
             fail(`could not write .jitera.json: ${error.message}`);

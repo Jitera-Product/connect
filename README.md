@@ -43,8 +43,9 @@ npx @jitera/connect
 npx @jitera/connect init
 ```
 
-run this once per repo, from inside the repo, and commit the three files it
-writes. `.jitera.json` records the deployment and project the repo belongs to.
+run it in the directory you want to bind, usually the repo root, and commit
+the three files it writes. from a subfolder of a repo it writes there and offers
+the repo root instead. `.jitera.json` records the deployment and project the repo belongs to.
 AGENTS.md carries the same guidance for assistants that read it natively, and
 CLAUDE.md imports it, because claude code reads CLAUDE.md and not AGENTS.md.
 
@@ -54,7 +55,9 @@ see what it would write.
 
 it refuses to run outside a git repository. instructions written above a repo
 are invisible to anything that reads AGENTS.md from the repo root, and a
-CLAUDE.md above a repo leaks into every project underneath it.
+CLAUDE.md above a repo leaks into every project underneath it. for the same
+reason it refuses to write into your home directory or the filesystem root,
+even when one of those is itself a git repository.
 
 ## choosing which agents a repo reads
 

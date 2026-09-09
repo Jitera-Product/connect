@@ -40,6 +40,12 @@ async function ask(prompt) {
         rl.close();
     }
 }
+// A yes/no. Anything but an explicit yes is no, so a stray enter never
+// confirms something it was not meant to.
+export async function confirm(prompt) {
+    const answer = (await ask(prompt)).toLowerCase();
+    return answer === "y" || answer === "yes";
+}
 // Arrow-key selection on a terminal, a numbered prompt everywhere else.
 export async function chooseFrom({ items, prompt, label, theme, }) {
     if (process.stdin.isTTY && process.stdout.isTTY) {

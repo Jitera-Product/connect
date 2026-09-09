@@ -10,8 +10,9 @@ import { GraphqlError, listOrganisations, listProjects } from "../graphql.ts";
 import { writeAgentsMd } from "../install/agents-md.ts";
 import { DEFAULT_BRAND } from "../install/render.ts";
 import { resolveGitRoot } from "../install/project-root.ts";
+import { broadDirectoryReason, chooseInitTarget, isBroadDirectory } from "../install/init-target.ts";
 import { writeProjectMarker } from "../project-marker.ts";
-import { InvalidChoiceError, SelectCancelledError, chooseFrom } from "../select.ts";
+import { InvalidChoiceError, SelectCancelledError, chooseFrom, confirm } from "../select.ts";
 import { createTheme } from "../theme.ts";
 import { endWith, runCommand } from "../exit.ts";
 
@@ -61,16 +62,42 @@ await runCommand(async () => {
     endWith(2);
   }
 
-  const projectRoot = resolveGitRoot(process.cwd());
-  if (!projectRoot) {
-    process.stderr.write(
-      "error: not inside a git repository. Instructions written outside a repository " +
-        "are invisible to assistants that read AGENTS.md from the repository root, and " +
-        "an out-of-repo CLAUDE.md leaks into every project below it. Run this from " +
-        "inside the repository you want to connect.\n"
-    );
+  const cwd = process.cwd();
+  const target = chooseInitTarget({ cwd, gitRoot: resolveGitRoot(cwd) });
+  if (target.kind === "refuse") {
+    process.stderr.write(`error: ${target.reason}\n`);
     endWith(2);
   }
+
+  // The directory init was run in is the intent. When that sits inside a larger
+  // repository the root is offered, never assumed: binding a monorepo from one
+  // of its packages is a choice, and the old behaviour of silently writing at
+  // the root put a CLAUDE.md wherever the nearest .git happened to be - the
+  // home directory, for one user - where it governed every project beneath it.
+  let projectRoot = target.dir;
+  if (target.repoRoot) {
+    if (process.stdin.isTTY && process.stdout.isTTY) {
+      process.stdout.write(
+        `\n  ${theme.dim("this folder is inside the repository at")} ${target.repoRoot}\n`
+      );
+      const moveUp = await confirm(
+        `  ${theme.dim("write the files there instead of here? [y/N]")} `
+      );
+      if (moveUp) {
+        if (isBroadDirectory(target.repoRoot)) {
+          process.stderr.write(`error: ${broadDirectoryReason(target.repoRoot)}\n`);
+          endWith(2);
+        }
+        projectRoot = target.repoRoot;
+      }
+    } else {
+      process.stdout.write(
+        `  ${theme.dim(`inside the repository at ${target.repoRoot}; writing here. ` +
+          "Run init from there to bind the whole repository.")}\n`
+      );
+    }
+  }
+  process.stdout.write(`  ${theme.dim("writing to")} ${projectRoot}\n`);
 
   let brand = DEFAULT_BRAND;
   try {
