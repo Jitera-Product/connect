@@ -5,6 +5,7 @@ import { PassThrough } from "node:stream";
 
 import {
   configFromEnvironment,
+  markerSearchPath,
   resolveProjectUuid,
   runProxy,
   resolveAgents,
@@ -246,6 +247,17 @@ test("an explicit JITERA_PROJECT beats the repository marker", async () => {
   assert.equal(resolveProjectUuid({}, isolatedTmpdir()), undefined);
 });
 
+test("PWD is searched when cwd is not the repository", async () => {
+  const { writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { isolatedTmpdir } = await import("./helpers.ts");
+  const repo = isolatedTmpdir();
+  writeFileSync(join(repo, ".jitera.json"), JSON.stringify({ project: "from-pwd" }), "utf8");
+  const elsewhere = isolatedTmpdir();
+
+  assert.equal(resolveProjectUuid({ PWD: repo } as NodeJS.ProcessEnv, elsewhere), "from-pwd");
+});
+
 test("discovery supplies the brand alongside the endpoint", async () => {
   const studio = await jsonStubServer((_body, res) => {
     res.writeHead(200, { "content-type": "application/json" });
@@ -410,4 +422,57 @@ test("a memory write never receives the plural agents filter", () => {
   // reject it.
   const out = withAgentSelection(remember({ name: "Checkout" }), ["agent-1"]);
   assert.equal("agents" in argsOf(out as ReturnType<typeof remember>), false);
+});
+
+
+// The proxy does not choose its own working directory - the assistant spawns it
+// - so a plugin can start somewhere the repository's .jitera.json is not. The
+// only symptom was every tool reporting "no project is selected" for a
+// repository that is bound perfectly well.
+
+test("the workspace claude code names is searched, not just the cwd", () => {
+  const path = markerSearchPath(
+    { CLAUDE_PROJECT_DIR: "/work/repo-a" } as NodeJS.ProcessEnv,
+    "/somewhere/else"
+  );
+  assert.deepEqual(path, ["/somewhere/else", "/work/repo-a"]);
+});
+
+test("PWD is searched too, and the cwd stays first", () => {
+  const path = markerSearchPath(
+    { CLAUDE_PROJECT_DIR: "/work/repo-a", PWD: "/work/repo-b" } as NodeJS.ProcessEnv,
+    "/cwd"
+  );
+  assert.deepEqual(path, ["/cwd", "/work/repo-a", "/work/repo-b"]);
+});
+
+test("the same directory named twice is searched once", () => {
+  const path = markerSearchPath(
+    { CLAUDE_PROJECT_DIR: "/repo", PWD: "/repo" } as NodeJS.ProcessEnv,
+    "/repo"
+  );
+  assert.deepEqual(path, ["/repo"]);
+});
+
+test("blank environment entries are not searched", () => {
+  const path = markerSearchPath(
+    { CLAUDE_PROJECT_DIR: "", PWD: "   " } as NodeJS.ProcessEnv,
+    "/repo"
+  );
+  assert.deepEqual(path, ["/repo"]);
+});
+
+test("a binding is found through the workspace claude code names", async () => {
+  const { writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { isolatedTmpdir } = await import("./helpers.ts");
+
+  const repo = isolatedTmpdir();
+  writeFileSync(join(repo, ".jitera.json"), JSON.stringify({ project: "p-42" }), "utf8");
+
+  const found = resolveProjectUuid(
+    { CLAUDE_PROJECT_DIR: repo } as NodeJS.ProcessEnv,
+    "/definitely/not/the/repo"
+  );
+  assert.equal(found, "p-42");
 });

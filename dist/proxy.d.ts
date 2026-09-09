@@ -11,6 +11,7 @@ export interface ProxyConfig {
     readonly projectUuid?: string | undefined;
     readonly agents?: readonly string[] | undefined;
 }
+export declare function markerSearchPath(env: NodeJS.ProcessEnv, cwd: string): string[];
 export declare function resolveProjectUuid(env: NodeJS.ProcessEnv, cwd?: string): string | undefined;
 export declare function resolveAgents(cwd: string, env?: NodeJS.ProcessEnv): readonly string[] | undefined;
 export declare function withAgentSelection(request: JsonRpcRequest, agents: readonly string[] | undefined): JsonRpcRequest;

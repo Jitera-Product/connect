@@ -4,13 +4,31 @@ import { DEFAULT_BRAND } from "./install/render.js";
 import { McpCallError, postRpc } from "./mcp-client.js";
 import { readProjectMarker } from "./project-marker.js";
 const REQUEST_TIMEOUT_MS = 30_000;
+// Where to look for the repository's binding. The proxy does not choose its own
+// working directory - the assistant spawns it - so the marker is looked for in
+// every directory that could be the workspace. CLAUDE_PROJECT_DIR is the one
+// Claude Code sets, and without it a plugin started anywhere but the repository
+// root finds no binding, and every tool then answers "no project is selected"
+// for a repository that is bound perfectly well.
+export function markerSearchPath(env, cwd) {
+    const candidates = [cwd, (env["CLAUDE_PROJECT_DIR"] ?? "").trim(), (env["PWD"] ?? "").trim()];
+    return [...new Set(candidates.filter((dir) => dir !== ""))];
+}
+function repositoryMarker(env, cwd) {
+    for (const dir of markerSearchPath(env, cwd)) {
+        const found = readProjectMarker(dir);
+        if (found)
+            return found;
+    }
+    return undefined;
+}
 // The repository's committed .jitera.json binds the workspace to a project;
 // an explicit JITERA_PROJECT env always wins.
 export function resolveProjectUuid(env, cwd = process.cwd()) {
     const override = (env["JITERA_PROJECT"] ?? "").trim();
     if (override)
         return override;
-    return readProjectMarker(cwd)?.project;
+    return repositoryMarker(env, cwd)?.project;
 }
 export function resolveAgents(cwd, env = process.env) {
     // JITERA_PROJECT overrides which project the proxy talks to, and agent ids
@@ -19,7 +37,7 @@ export function resolveAgents(cwd, env = process.env) {
     // recall, so the override drops the selection with it.
     if (env["JITERA_PROJECT"])
         return undefined;
-    const agents = readProjectMarker(cwd)?.agents;
+    const agents = repositoryMarker(env, cwd)?.agents;
     return agents && agents.length > 0 ? agents : undefined;
 }
 // Tools whose reach `set-agent` narrows. Clients other than Claude Code reach
@@ -99,7 +117,7 @@ export async function runProxy({ url, apiKey, instructions, projectUuid, agents 
             response = await postRpc(withAgentSelection(request, agents), {
                 url,
                 apiKey,
-                projectUuid,
+                projectUuid: resolveProjectUuid(process.env) ?? projectUuid,
                 timeoutMs: REQUEST_TIMEOUT_MS,
             });
         }
@@ -124,7 +142,7 @@ export async function configFromEnvironment(env) {
     const override = env["JITERA_MCP_URL"] ?? "";
     if (override)
         return { url: override, apiKey, brand: DEFAULT_BRAND };
-    const environment = env["JITERA_ENVIRONMENT"] ?? "";
+    const environment = repositoryMarker(env, process.cwd())?.environment ?? env["JITERA_ENVIRONMENT"] ?? "";
     const deployment = await discoverDeployment({
         environment,
         studioUrl: env["JITERA_STUDIO_URL"],

@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 import { DiscoveryError } from "../discovery.ts";
 import { UnknownEnvironmentError } from "../environments.ts";
 import { render } from "../install/render.ts";
-import { configFromEnvironment, resolveAgents, resolveProjectUuid, runProxy } from "../proxy.ts";
+import {
+  configFromEnvironment,
+  markerSearchPath,
+  resolveAgents,
+  resolveProjectUuid,
+  runProxy,
+} from "../proxy.ts";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -35,13 +41,30 @@ try {
   process.exit(2);
 }
 
+const projectUuid = resolveProjectUuid(process.env);
+const agents = resolveAgents(process.cwd(), process.env);
+
+// Say what this proxy is bound to, once, on the way up. The assistant chooses
+// the working directory, so a plugin can start somewhere the repository's
+// .jitera.json is not - and the only symptom was every tool reporting "no
+// project is selected" for a repository that is bound. Where it looked is the
+// answer to that, and it belongs where the assistant already shows this
+// server's output rather than in a support thread.
+process.stderr.write(
+  projectUuid
+    ? `jitera-connect: bound to project ${projectUuid}` +
+        `${agents ? `, agents ${agents.join(", ")}` : ", every agent"}\n`
+    : "jitera-connect: no .jitera.json found, so tools are not scoped to a project. " +
+        `Looked in: ${markerSearchPath(process.env, process.cwd()).join(", ")}\n`
+);
+
 await runProxy(
   {
     url: config.url,
     apiKey: config.apiKey,
     instructions: loadInstructions(config.brand),
-    projectUuid: resolveProjectUuid(process.env),
-    agents: resolveAgents(process.cwd(), process.env),
+    projectUuid,
+    agents,
   },
   { input: process.stdin, output: process.stdout, log: process.stderr }
 );
