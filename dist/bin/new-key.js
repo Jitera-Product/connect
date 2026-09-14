@@ -134,7 +134,7 @@ await runCommand(async () => {
     }
     if (!args.json)
         process.stdout.write(heading(theme, brand, "new key"));
-    const access = args.access === "read" ? "read-only" : "read + write";
+    const access = args.access === "read" ? "READ ONLY" : "READ + WRITE";
     if (args.install) {
         const claude = installClaudeCodePlugin({
             apiKey: created.rawKey,
@@ -172,7 +172,10 @@ await runCommand(async () => {
     }
     if (args.json)
         return;
-    process.stdout.write(`\n  ${theme.ok("✓")} ${theme.dim(`Created an account-wide ${access} key`)} ${theme.bold(created.maskedKey)}\n`);
+    process.stdout.write(`\n  ${theme.ok("✓")} ${theme.dim("Created an API key with")} ${theme.bold(access)} ${theme.dim("access to")} ${theme.bold("every project your account can access")} ${theme.dim(created.maskedKey)}\n` +
+        `  ${theme.dim(args.access === "read"
+            ? "It can read documents, context and memory, but cannot create or update them."
+            : "It can read, create and update documents, context and memory.")}\n`);
     if (!args.install) {
         // Shown once and never again, so it has to be printed in full here.
         process.stdout.write(`\n  ${created.rawKey}\n`);

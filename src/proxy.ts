@@ -101,19 +101,29 @@ export function withAgentSelection(
 
   if (!AGENT_SCOPED_TOOLS.has(params.name)) return request;
 
-  // A caller that named agents itself has been more specific than the
-  // repository default, so leave it alone.
   const args = params.arguments;
   if (args !== undefined && (typeof args !== "object" || Array.isArray(args))) {
     // Not a valid MCP argument object; forwarding it unchanged lets the server
     // reject it rather than this throwing on a property test.
     return request;
   }
-  if (args && "agents" in args) return request;
+
+  // The repository's selection is a ceiling, not a default. A caller that names
+  // agents may narrow within it, never reach outside it: the model reads
+  // .jitera.json too, and it was passing whatever it chose, which this used to
+  // accept as "more specific" - so a repo pinned to one agent could read any
+  // agent's memory by naming it. Anything outside the selection is dropped, and
+  // a request left with nothing inside it reads the selection rather than,
+  // as an empty list would mean to the server, every agent.
+  const requested = args?.["agents"];
+  const within = Array.isArray(requested)
+    ? requested.filter((id): id is string => typeof id === "string" && agents.includes(id))
+    : [];
+  const scoped = within.length > 0 ? within : [...agents];
 
   return {
     ...request,
-    params: { ...params, arguments: { ...(args ?? {}), agents: [...agents] } },
+    params: { ...params, arguments: { ...(args ?? {}), agents: scoped } },
   };
 }
 

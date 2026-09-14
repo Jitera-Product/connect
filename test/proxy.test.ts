@@ -317,11 +317,36 @@ test("gathering context is narrowed the same way", () => {
   assert.equal(params.arguments["task"], "refunds", "existing arguments survive");
 });
 
-test("a caller that named agents itself is left alone", () => {
-  // The caller has been more specific than the repository default.
-  const out = withAgentSelection(callFor("recall_jitera_memory", { agents: ["mine"] }), ["a1"]);
-  const params = out.params as { arguments: Record<string, unknown> };
-  assert.deepEqual(params.arguments["agents"], ["mine"]);
+const recall = (args: Record<string, unknown> = {}) => callFor("recall_jitera_memory", args);
+const argsOf = (request: { params?: unknown }) =>
+  (request.params as { arguments?: Record<string, unknown> }).arguments ?? {};
+
+test("a caller may narrow within the repository's selection", () => {
+  const out = withAgentSelection(recall({ agents: ["b"] }), ["a", "b"]);
+  assert.deepEqual(argsOf(out)["agents"], ["b"]);
+});
+
+test("a caller cannot name an agent outside the repository's selection", () => {
+  // The reported case: a repo pinned to one agent, and a recall that named a
+  // different agent and got its memory back.
+  const out = withAgentSelection(recall({ agents: ["customer-support"] }), ["blankgitlab"]);
+  assert.deepEqual(argsOf(out)["agents"], ["blankgitlab"]);
+});
+
+test("agents outside the selection are dropped, those inside are kept", () => {
+  const out = withAgentSelection(recall({ agents: ["b", "z"] }), ["a", "b"]);
+  assert.deepEqual(argsOf(out)["agents"], ["b"]);
+});
+
+test("an empty agents list does not widen to every agent", () => {
+  // To the server, [] means no filter. Here it must mean the selection.
+  const out = withAgentSelection(recall({ agents: [] }), ["a"]);
+  assert.deepEqual(argsOf(out)["agents"], ["a"]);
+});
+
+test("a non-list agents value is replaced with the selection", () => {
+  const out = withAgentSelection(recall({ agents: "b" as unknown as string[] }), ["a"]);
+  assert.deepEqual(argsOf(out)["agents"], ["a"]);
 });
 
 test("tools that do not read memory are untouched", () => {
@@ -394,8 +419,7 @@ const remember = (args: Record<string, unknown> = {}) => ({
   method: "tools/call",
   params: { name: "remember_jitera_memory", arguments: args },
 });
-const argsOf = (request: ReturnType<typeof remember>) =>
-  (request.params as { arguments?: Record<string, unknown> }).arguments ?? {};
+
 
 test("one selected agent is where a memory write is filed", () => {
   const out = withAgentSelection(remember({ name: "Checkout" }), ["agent-1"]);

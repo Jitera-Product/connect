@@ -289,10 +289,12 @@ await runCommand(async () => {
         }, undefined, 2)}\n`);
     }
     else if (!args.install) {
-        const access = args.access === "read" ? "read-only" : "read + write";
-        process.stdout.write(`\n  ${theme.ok("✓")} ${theme.dim(keyScope === "user"
-            ? `Created a user-level ${access} key. It works on every project your account can access.`
-            : `Created a ${access} key.`)}\n\n`);
+        const access = args.access === "read" ? "READ ONLY" : "READ + WRITE";
+        const reach = keyScope === "user" ? "every project your account can access (user-level)" : "this project";
+        process.stdout.write(`\n  ${theme.ok("✓")} ${theme.dim("Created an API key with")} ${theme.bold(access)} ${theme.dim("access to")} ${theme.bold(reach)}\n` +
+            `  ${theme.dim(args.access === "read"
+                ? "It can read documents, context and memory, but cannot create or update them."
+                : "It can read, create and update documents, context and memory.")}\n\n`);
         // Printed because this path exists for people who will export it themselves;
         // the --install flow never needs it. It is shown once and cannot be shown
         // again, and it reaches shell history, CI logs and anything recording the

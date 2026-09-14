@@ -55,10 +55,11 @@ across all of them, so a recalled fact may have been written by any agent;
 agent's own partition.
 
 A repository can narrow that itself: `.jitera.json` may carry an `agents` list,
-written by `npx @jitera/connect set-agent`, and sessions there read only those
-agents plus anything written project-wide. Pass `agents` to
-`recall_jitera_memory` or `gather_jitera_context` to narrow a single call the
-same way. Omit it to read every agent.
+written by `npx @jitera/connect set-agent`. That selection is applied to every
+`recall_jitera_memory` and `gather_jitera_context` call for you - do not read
+`.jitera.json` and pass `agents` yourself. You may pass `agents` to narrow a
+single call to a subset of the selection; anything outside it is ignored, so a
+call can never reach an agent the repository did not choose.
 
 ## Remember when knowledge is created
 
