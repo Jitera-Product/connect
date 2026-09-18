@@ -37,7 +37,6 @@ interface Args {
   access: McpAccess;
   keyName: string;
   organisation?: string;
-  project?: string;
   json: boolean;
   install: boolean;
   help: boolean;
@@ -49,7 +48,6 @@ const USAGE = [
   "",
   "  --env=studio-04      target a pilot; omit for production",
   "  --team=<slug>        skip the team prompt (--org= still works)",
-  "  --project=<uuid>     skip the team and project prompts",
   "  --read-only          create a read-only key (default is read + write)",
   "  --name=<name>        name for the created key",
   "  --json               print the result as json",
@@ -63,7 +61,6 @@ function parseArgs(argv: readonly string[]): Args {
     else if (arg.startsWith("--env=")) args.environment = arg.slice("--env=".length);
     else if (arg.startsWith("--org=")) args.organisation = arg.slice("--org=".length);
     else if (arg.startsWith("--team=")) args.organisation = arg.slice("--team=".length);
-    else if (arg.startsWith("--project=")) args.project = arg.slice("--project=".length);
     else if (arg.startsWith("--name=")) args.keyName = arg.slice("--name=".length);
     else if (arg === "--read-only") args.access = "read";
     else if (arg === "--json") args.json = true;
@@ -193,23 +190,21 @@ await runCommand(async () => {
 
   let created: CreatedApiKey | undefined;
   let keyScope: "user" | "project" = "user";
-  let projectUuid = args.project;
+  let projectUuid: string | undefined;
 
   // User-level first: one key for every project the account can access. Older
   // deployments reject the projectless params, and we fall back to project keys.
-  if (!projectUuid) {
-    try {
-      created = await createUserApiKey({ name: args.keyName, mcpAccess: args.access }, transport);
-    } catch (error) {
-      if (!(error instanceof GraphqlError)) throw error;
-      if (isAuthenticationFailure(error)) fail(error.message);
-      process.stdout.write(
-        `\n  ${theme.dim("This deployment issues project keys only — choosing a project.")}\n`
-      );
-    }
+  try {
+    created = await createUserApiKey({ name: args.keyName, mcpAccess: args.access }, transport);
+  } catch (error) {
+    if (!(error instanceof GraphqlError)) throw error;
+    if (isAuthenticationFailure(error)) fail(error.message);
+    process.stdout.write(
+      `\n  ${theme.dim("This deployment issues project keys only — choosing a project.")}\n`
+    );
   }
 
-  if (!created && !projectUuid) {
+  if (!created) {
     const organisations = await listOrganisations(transport);
     const named = args.organisation
       ? organisations.find((org) => org.slug === args.organisation)
@@ -343,7 +338,6 @@ await runCommand(async () => {
           apiKey: created.rawKey,
           maskedKey: created.maskedKey,
           scope: keyScope,
-          projectUuid: projectUuid ?? null,
           mcpAccess: args.access,
         },
         undefined,

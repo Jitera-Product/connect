@@ -11,29 +11,21 @@ import { InvalidChoiceError, NoInputError, SelectCancelledError, chooseManyFrom,
 import { createTheme } from "../theme.js";
 import { endWith, runCommand } from "../exit.js";
 const USAGE = [
-    "usage: npx @jitera/connect set-agent [--agent=<id>]... [--all] [--dry-run]",
+    "usage: npx @jitera/connect set-agent [--all] [--dry-run]",
     "",
     "Chooses which agents' memory this repository reads, and records the choice",
     "in .jitera.json so every session here uses it.",
     "",
     "With no flags it lists the project's agents: space selects, enter saves.",
     "",
-    "  --agent=<id>   select an agent without prompting; repeat for several",
     "  --all          read every agent, clearing any previous selection",
     "  --dry-run      show what would change without writing",
 ].join("\n");
 function parseArgs(argv) {
-    const args = { agents: [], all: false, dryRun: false, help: false };
+    const args = { all: false, dryRun: false, help: false };
     for (const arg of argv) {
         if (arg === "set-agent")
             continue;
-        else if (arg.startsWith("--agent=")) {
-            const id = arg.slice("--agent=".length).trim();
-            if (id && !args.agents.includes(id))
-                args.agents.push(id);
-            else if (!id)
-                args.blankAgent = true;
-        }
         else if (arg === "--all")
             args.all = true;
         else if (arg === "--dry-run")
@@ -60,16 +52,6 @@ await runCommand(async () => {
         process.stderr.write(`error: unrecognised argument "${args.unknown}"\n${USAGE}\n`);
         endWith(2);
     }
-    if (args.blankAgent && args.agents.length === 0) {
-        // Otherwise this wrote `"agents": [""]`, which reads back as no selection at
-        // all while the command claimed to have recorded one.
-        process.stderr.write(`error: --agent= needs an id\n${USAGE}\n`);
-        endWith(2);
-    }
-    if (args.all && args.agents.length > 0) {
-        process.stderr.write(`error: --all and --agent are contradictory\n${USAGE}\n`);
-        endWith(2);
-    }
     const projectRoot = resolveGitRoot(process.cwd());
     if (!projectRoot) {
         fail("this is not a git repository, and the binding belongs at a repository root.", 2);
@@ -81,7 +63,7 @@ await runCommand(async () => {
     if (!marker?.project) {
         fail(marker
             ? "this repository's .jitera.json records no project, so there are no agents to choose from. " +
-                "Run: npx @jitera/connect init --project=<uuid>"
+                "Run: npx @jitera/connect init"
             : "this repository is not bound to a project yet. Run: npx @jitera/connect init");
     }
     const markerDir = dirname(marker.path);
@@ -109,12 +91,9 @@ await runCommand(async () => {
     }
     if (args.all)
         save([]);
-    if (args.agents.length > 0)
-        save(args.agents);
     const session = loadCliSession();
     if (!session) {
-        fail("no stored sign-in, so the agents cannot be listed. Run `npx @jitera/connect login`, " +
-            "or pass --agent=<id> if you already know the ids.");
+        fail("no stored sign-in, so the agents cannot be listed. Run `npx @jitera/connect login` first.");
     }
     let agents;
     try {
@@ -127,7 +106,7 @@ await runCommand(async () => {
         if (error instanceof DiscoveryError ||
             error instanceof DeviceFlowError ||
             error instanceof GraphqlError) {
-            fail(`${error.message} Pass --agent=<id> to set the selection without listing.`);
+            fail(error.message);
         }
         if (error instanceof Error)
             fail(error.message);
@@ -137,8 +116,7 @@ await runCommand(async () => {
         // An empty list is also what the server returns when the policy scope hides
         // every agent, so name both causes rather than assert the wrong one.
         fail("no published agents came back for this project. Either it has none yet, or " +
-            "your account cannot see them. Check the project in the studio, or pass " +
-            "--agent=<id> if you know the id.");
+            "your account cannot see them. Check the project in the studio.");
     }
     const already = new Set(marker.agents ?? []);
     let chosen;
@@ -162,7 +140,7 @@ await runCommand(async () => {
         if (error instanceof InvalidChoiceError)
             fail(error.message, 2);
         if (error instanceof NoInputError) {
-            fail("nothing to read the answer from. Pass --agent=<id> or --all instead.", 2);
+            fail("nothing to read the answer from. Pass --all instead.", 2);
         }
         throw error;
     }

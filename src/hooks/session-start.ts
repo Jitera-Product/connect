@@ -61,7 +61,7 @@ if (apiKey && marker && !marker.project) {
   directive +=
     `\n\nNote: this repository's .jitera.json records no project. A user-level ` +
     `API key cannot infer one, so project context may not load. Suggest finishing ` +
-    `the binding with:\n\n    npx @jitera/connect init --project=<uuid>`;
+    `the binding with:\n\n    npx @jitera/connect init`;
 }
 
 emitContext("SessionStart", directive);

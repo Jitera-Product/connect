@@ -20,14 +20,13 @@ const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 interface Args {
   environment?: string;
-  project?: string;
   dryRun: boolean;
   help: boolean;
   unknown?: string;
 }
 
 const USAGE = [
-  "usage: npx @jitera/connect init [--env=<environment>] [--project=<uuid>] [--dry-run]",
+  "usage: npx @jitera/connect init [--env=<environment>] [--dry-run]",
   "",
   "Writes the shared, committable connection files at the root of the current",
   "git repository: an AGENTS.md block for assistants that read it natively, a",
@@ -41,7 +40,6 @@ function parseArgs(argv: readonly string[]): Args {
   for (const arg of argv) {
     if (arg === "init") continue;
     else if (arg.startsWith("--env=")) args.environment = arg.slice("--env=".length);
-    else if (arg.startsWith("--project=")) args.project = arg.slice("--project=".length);
     else if (arg === "--dry-run") args.dryRun = true;
     else if (arg === "--help" || arg === "-h") args.help = true;
     else args.unknown = arg;
@@ -118,10 +116,10 @@ await runCommand(async () => {
   // A stored login session ("login once") lets init pick the project here, so
   // the binding lands in .jitera.json without another browser round-trip.
   const session = loadCliSession();
-  let projectUuid = args.project;
+  let projectUuid: string | undefined;
   let projectName: string | undefined;
 
-  if (!projectUuid && session) {
+  if (session) {
     let accessToken = session.accessToken;
     try {
       if (isExpired(session)) {
@@ -144,6 +142,7 @@ await runCommand(async () => {
       }
 
       const transport = { automationUrl: session.automationUrl, accessToken };
+
       const organisations = await listOrganisations(transport);
       const organisation =
         organisations.length > 1
@@ -158,7 +157,7 @@ await runCommand(async () => {
       const projects = await listProjects(transport, organisation);
       if (projects.length === 0) {
         process.stdout.write(
-          `  ${theme.dim("this account has no projects here; pass --project=<uuid> to bind one")}\n`
+          `  ${theme.dim("this account has no projects here")}\n`
         );
       } else {
         const choice =
@@ -187,15 +186,15 @@ await runCommand(async () => {
       }
       if (error instanceof DeviceFlowError || error instanceof GraphqlError) {
         process.stdout.write(
-          `  ${theme.dim(`could not list projects (${error.message}); pass --project=<uuid>`)}\n`
+          `  ${theme.dim(`could not list projects (${error.message})`)}\n`
         );
       } else {
         throw error;
       }
     }
-  } else if (!projectUuid) {
+  } else {
     process.stdout.write(
-      `  ${theme.dim("sign in once with the login command to pick a project here, or pass --project=<uuid>")}\n`
+      `  ${theme.dim("sign in once with the login command to pick a project here")}\n`
     );
   }
 

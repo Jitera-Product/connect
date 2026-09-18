@@ -16,7 +16,7 @@ import { createTheme } from "../theme.js";
 import { endWith, runCommand } from "../exit.js";
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const USAGE = [
-    "usage: npx @jitera/connect init [--env=<environment>] [--project=<uuid>] [--dry-run]",
+    "usage: npx @jitera/connect init [--env=<environment>] [--dry-run]",
     "",
     "Writes the shared, committable connection files at the root of the current",
     "git repository: an AGENTS.md block for assistants that read it natively, a",
@@ -31,8 +31,6 @@ function parseArgs(argv) {
             continue;
         else if (arg.startsWith("--env="))
             args.environment = arg.slice("--env=".length);
-        else if (arg.startsWith("--project="))
-            args.project = arg.slice("--project=".length);
         else if (arg === "--dry-run")
             args.dryRun = true;
         else if (arg === "--help" || arg === "-h")
@@ -103,9 +101,9 @@ await runCommand(async () => {
     // A stored login session ("login once") lets init pick the project here, so
     // the binding lands in .jitera.json without another browser round-trip.
     const session = loadCliSession();
-    let projectUuid = args.project;
+    let projectUuid;
     let projectName;
-    if (!projectUuid && session) {
+    if (session) {
         let accessToken = session.accessToken;
         try {
             if (isExpired(session)) {
@@ -138,7 +136,7 @@ await runCommand(async () => {
                 : organisations[0];
             const projects = await listProjects(transport, organisation);
             if (projects.length === 0) {
-                process.stdout.write(`  ${theme.dim("this account has no projects here; pass --project=<uuid> to bind one")}\n`);
+                process.stdout.write(`  ${theme.dim("this account has no projects here")}\n`);
             }
             else {
                 const choice = projects.length > 1
@@ -166,15 +164,15 @@ await runCommand(async () => {
                 endWith(2);
             }
             if (error instanceof DeviceFlowError || error instanceof GraphqlError) {
-                process.stdout.write(`  ${theme.dim(`could not list projects (${error.message}); pass --project=<uuid>`)}\n`);
+                process.stdout.write(`  ${theme.dim(`could not list projects (${error.message})`)}\n`);
             }
             else {
                 throw error;
             }
         }
     }
-    else if (!projectUuid) {
-        process.stdout.write(`  ${theme.dim("sign in once with the login command to pick a project here, or pass --project=<uuid>")}\n`);
+    else {
+        process.stdout.write(`  ${theme.dim("sign in once with the login command to pick a project here")}\n`);
     }
     const result = writeAgentsMd({
         packageRoot: PACKAGE_ROOT,

@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import type { ServerResponse } from "node:http";
 import { join } from "node:path";
 
-import { isolatedTmpdir, runNode } from "./helpers.ts";
+import { isolatedTmpdir, runNode, stubServer } from "./helpers.ts";
 
 const CONNECT = "dist/bin/connect.js";
 
@@ -97,16 +98,39 @@ test("init defaults the recorded environment to production", async () => {
   assert.equal(marker.environment, "studio");
 });
 
-test("init records the project when one is given", async () => {
+async function withSession(
+  handler: Parameters<typeof stubServer>[0],
+  run: (ctx: {
+    root: string;
+    configDir: string;
+    graphql: Awaited<ReturnType<typeof stubServer>>;
+  }) => Promise<void>
+): Promise<void> {
   const { root } = gitRepo();
-  await runNode(CONNECT, {
-    args: ["init", "--env=studio-04", "--project=abc-123"],
-    cwd: root,
-    env: OFFLINE,
-  });
-  const marker = JSON.parse(readFileSync(join(root, ".jitera.json"), "utf8"));
-  assert.equal(marker.project, "abc-123");
-});
+  const graphql = await stubServer(handler);
+  const configDir = isolatedTmpdir();
+  writeFileSync(
+    join(configDir, "session.json"),
+    JSON.stringify({
+      automationUrl: graphql.url.replace(/\/mcp$/, ""),
+      environment: "studio-04",
+      accessToken: "at-stored",
+    }),
+    "utf8"
+  );
+  try {
+    await run({ root, configDir, graphql });
+  } finally {
+    await graphql.close();
+  }
+}
+
+function json(res: ServerResponse, body: unknown): void {
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify(body));
+}
+
+
 
 test("a dry run writes no marker either", async () => {
   const { root } = gitRepo();
@@ -168,7 +192,7 @@ test("init without a session explains how to bind a project", async () => {
   const { root } = gitRepo();
   const { stdout, code } = await runNode(CONNECT, { args: ["init"], cwd: root, env: OFFLINE });
   assert.equal(code, 0);
-  assert.match(stdout, /sign in once|--project=/);
+  assert.match(stdout, /sign in once/);
   const marker = JSON.parse(readFileSync(join(root, ".jitera.json"), "utf8"));
   assert.equal(marker.project, undefined);
 });
@@ -198,7 +222,7 @@ test("init rejects an unknown environment before touching the network", async ()
 test("init refuses to write into a home directory that is a git repository", async () => {
   const { root: home } = gitRepo();
   const { code, stderr } = await runNode(CONNECT, {
-    args: ["init", "--project=2af7e51d-a048-4753-bc14-209ff1865bd8"],
+    args: ["init"],
     cwd: home,
     env: { ...OFFLINE, HOME: home },
   });
@@ -213,7 +237,7 @@ test("a project under a home-that-is-a-repo is bound in the project, not in home
   const proj = join(home, "Documents", "proj");
   mkdirSync(proj, { recursive: true });
   const { code, stdout } = await runNode(CONNECT, {
-    args: ["init", "--project=2af7e51d-a048-4753-bc14-209ff1865bd8"],
+    args: ["init"],
     cwd: proj,
     env: { ...OFFLINE, HOME: home },
   });

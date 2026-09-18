@@ -135,11 +135,9 @@ test("a deployment with user-level keys needs no project at all", async () => {
   const result = JSON.parse(stdout.slice(stdout.indexOf("{"))) as {
     apiKey: string;
     scope: string;
-    projectUuid: string | null;
   };
   assert.equal(result.apiKey, "sk-user-key-1");
   assert.equal(result.scope, "user");
-  assert.equal(result.projectUuid, null);
   assert.ok(!server.seen.includes("gql ConnectProjects"), "no project listing for a user key");
   assert.ok(!server.seen.includes("gql ConnectTeams"), "no organisation lookup for a user key");
   await server.close();
@@ -172,22 +170,10 @@ test("older deployments fall back to the project flow with a notice", async () =
   await server.close();
 });
 
-test("an explicit --project skips the user-level attempt entirely", async () => {
-  const server = await replayServer();
-  await runNode(LOGIN, {
-    args: ["--json", "--project=proj-uuid-1"],
-    env: { JITERA_AUTOMATION_URL: server.url },
-  });
-  const creates = server.seen.filter((s) => s.startsWith("createApiKey"));
-  assert.equal(creates.length, 1);
-  assert.ok(creates[0]?.includes("proj-uuid-1"));
-  await server.close();
-});
-
 test("login walks the whole flow and prints an api key", async () => {
   const server = await replayServer();
   const { stdout, code } = await runNode(LOGIN, {
-    args: ["--json", "--project=proj-uuid-1"],
+    args: ["--json"],
     env: { JITERA_AUTOMATION_URL: server.url },
   });
 
@@ -207,7 +193,6 @@ test("login walks the whole flow and prints an api key", async () => {
 test("login shows the code and url for the user to approve", async () => {
   const server = await replayServer();
   const { stdout } = await runNode(LOGIN, {
-    args: ["--project=proj-uuid-1"],
     env: { JITERA_AUTOMATION_URL: server.url },
   });
   assert.match(stdout, /FQMOQ3EF/);
@@ -223,14 +208,14 @@ test("a single project is selected without prompting", async () => {
     env: { JITERA_AUTOMATION_URL: server.url },
   });
   assert.equal(code, 0);
-  assert.match(stdout, /proj-uuid-1/);
+  assert.match(stdout, /Acme Platform/, "the single project is auto-selected");
   await server.close();
 });
 
 test("read-only is requested when asked for", async () => {
   const server = await replayServer();
   await runNode(LOGIN, {
-    args: ["--json", "--read-only", "--project=proj-uuid-1"],
+    args: ["--json", "--read-only"],
     env: { JITERA_AUTOMATION_URL: server.url },
   });
   const call = server.seen.find((s) => s.startsWith("createApiKey"));
@@ -251,7 +236,6 @@ test("a permission failure surfaces the server's own message", async () => {
     createKeyResponse: { errors: [{ message: "You are not authorized to manage api keys" }] },
   });
   const { stderr, code } = await runNode(LOGIN, {
-    args: ["--project=proj-uuid-1"],
     env: { JITERA_AUTOMATION_URL: server.url },
   });
   assert.equal(code, 1);
@@ -266,7 +250,6 @@ test("a string error from the real server is surfaced, not crashed on", async ()
     },
   });
   const { stdout, stderr, code } = await runNode(LOGIN, {
-    args: ["--project=proj-uuid-1"],
     env: { JITERA_AUTOMATION_URL: server.url },
   });
   assert.equal(code, 1);
@@ -281,7 +264,6 @@ test("success false with no message still fails rather than printing nothing", a
     createKeyResponse: { data: { createApiKey: { success: false, errors: null } } },
   });
   const { stderr, code } = await runNode(LOGIN, {
-    args: ["--project=proj-uuid-1"],
     env: { JITERA_AUTOMATION_URL: server.url },
   });
   assert.equal(code, 1);
@@ -294,7 +276,6 @@ test("a mutation that returns no key does not print an empty export line", async
     createKeyResponse: { data: { createApiKey: { rawKey: null, errors: null, apiKey: null } } },
   });
   const { stdout, stderr, code } = await runNode(LOGIN, {
-    args: ["--project=proj-uuid-1"],
     env: { JITERA_AUTOMATION_URL: server.url },
   });
   assert.equal(code, 1);
@@ -342,7 +323,7 @@ test("--org picks the organisation so nothing is prompted", async () => {
   });
 
   assert.equal(code, 0, `login exited ${code}: ${stdout}`);
-  assert.match(stdout, /proj-uuid-1/);
+  assert.match(stdout, /Acme Platform/, "the project under the chosen org is auto-selected");
   await server.close();
 });
 
@@ -364,7 +345,6 @@ test("an unknown --org fails and lists the ones that exist", async () => {
 test("piped output never fills up with spinner frames", async () => {
   const server = await replayServer();
   const { stdout } = await runNode(LOGIN, {
-    args: ["--project=proj-uuid-1"],
     env: { JITERA_AUTOMATION_URL: server.url, FORCE_COLOR: "1", COLORTERM: "truecolor" },
   });
 

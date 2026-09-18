@@ -64,17 +64,15 @@ test("a marker with no project says so rather than listing nothing", async () =>
   assert.match(stderr, /records no project/);
 });
 
-test("--agent records a selection without prompting", async () => {
-  const { root, nested } = boundRepo();
-  const { code } = await runNode(CONNECT, {
-    args: ["set-agent", "--agent=a1", "--agent=a2"],
-    cwd: nested,
+test("--agent is no longer accepted", async () => {
+  const { root } = boundRepo();
+  const { code, stderr } = await runNode(CONNECT, {
+    args: ["set-agent", "--agent=a1"],
+    cwd: root,
     env: OFFLINE,
   });
-
-  assert.equal(code, 0);
-  // Written at the repository root, from a nested directory.
-  assert.deepEqual(markerIn(root)["agents"], ["a1", "a2"]);
+  assert.equal(code, 2);
+  assert.match(stderr, /unrecognised argument/);
 });
 
 test("--all clears a previous selection", async () => {
@@ -93,14 +91,13 @@ test("--all clears a previous selection", async () => {
 test("--dry-run reports without writing", async () => {
   const { root } = boundRepo();
   const { code, stdout } = await runNode(CONNECT, {
-    args: ["set-agent", "--agent=a1", "--dry-run"],
+    args: ["set-agent", "--all", "--dry-run"],
     cwd: root,
     env: OFFLINE,
   });
 
   assert.equal(code, 0);
   assert.match(stdout, /would record/);
-  assert.ok(!("agents" in markerIn(root)), "a dry run must not touch the file");
 });
 
 test("an empty list does not claim the project has no agents", async () => {
@@ -140,8 +137,8 @@ test("an empty list does not claim the project has no agents", async () => {
 
   assert.notEqual(code, 0);
   assert.match(stderr, /cannot see them/, "a permission cause is named too");
-  assert.match(stderr, /--agent=/);
 });
+
 
 test("without a stored sign-in the user is told how to proceed", async () => {
   const { root } = boundRepo();
@@ -149,62 +146,15 @@ test("without a stored sign-in the user is told how to proceed", async () => {
 
   assert.notEqual(code, 0);
   assert.match(stderr, /login/);
-  assert.match(stderr, /--agent=/, "the non-interactive escape hatch is named");
 });
 
-test("the selection preserves the rest of the marker", async () => {
+test("--all preserves the rest of the marker", async () => {
   const { root } = boundRepo({ environment: "studio-06", project: "p1" });
-  await runNode(CONNECT, { args: ["set-agent", "--agent=a1"], cwd: root, env: OFFLINE });
+  await runNode(CONNECT, { args: ["set-agent", "--all"], cwd: root, env: OFFLINE });
 
   const marker = markerIn(root);
   assert.equal(marker["environment"], "studio-06");
   assert.equal(marker["project"], "p1");
-});
-
-test("--agent= with no id is refused rather than written as a blank", async () => {
-  // It used to write `"agents": [""]`, which reads back as no selection while
-  // the command claimed to have recorded one.
-  const { root } = boundRepo();
-  const { code, stderr } = await runNode(CONNECT, {
-    args: ["set-agent", "--agent="],
-    cwd: root,
-    env: OFFLINE,
-  });
-
-  assert.equal(code, 2);
-  assert.match(stderr, /needs an id/);
-  assert.ok(!("agents" in markerIn(root)));
-});
-
-test("--all and --agent together are refused rather than one winning silently", async () => {
-  const { root } = boundRepo();
-  const { code, stderr } = await runNode(CONNECT, {
-    args: ["set-agent", "--all", "--agent=a1"],
-    cwd: root,
-    env: OFFLINE,
-  });
-
-  assert.equal(code, 2);
-  assert.match(stderr, /contradictory/);
-});
-
-test("repeated ids are recorded once", async () => {
-  const { root } = boundRepo();
-  await runNode(CONNECT, {
-    args: ["set-agent", "--agent=a1", "--agent=a1", "--agent=a2"],
-    cwd: root,
-    env: OFFLINE,
-  });
-  assert.deepEqual(markerIn(root)["agents"], ["a1", "a2"]);
-});
-
-test("padded ids are trimmed before they are written", async () => {
-  const { root } = boundRepo();
-  await runNode(CONNECT, { args: ["set-agent", "--agent=  a1  "], cwd: root, env: OFFLINE });
-
-  // A padded id matches no partition server-side, so recall would silently
-  // return only project-wide memory.
-  assert.deepEqual(markerIn(root)["agents"], ["a1"]);
 });
 
 test("an unwritable marker reports the reason instead of a stack trace", async () => {
@@ -213,7 +163,7 @@ test("an unwritable marker reports the reason instead of a stack trace", async (
   chmodSync(join(root, ".jitera.json"), 0o444);
 
   const { code, stderr } = await runNode(CONNECT, {
-    args: ["set-agent", "--agent=a1"],
+    args: ["set-agent", "--all"],
     cwd: root,
     env: OFFLINE,
   });
@@ -234,11 +184,11 @@ test("a binding in a subfolder is found from beneath it", async () => {
   writeFileSync(join(sub, ".jitera.json"), JSON.stringify({ environment: "studio", project: "p-sub" }), "utf8");
 
   const { code } = await runNode(CONNECT, {
-    args: ["set-agent", "--agent=a-1"],
+    args: ["set-agent", "--all"],
     cwd: join(sub, "src"),
     env: OFFLINE,
   });
   assert.equal(code, 0);
-  assert.deepEqual(markerIn(sub)["agents"], ["a-1"]);
+  assert.ok(!("agents" in markerIn(sub)), "--all clears the selection");
   assert.equal(markerIn(root)["agents"], undefined, "the root binding is untouched");
 });
