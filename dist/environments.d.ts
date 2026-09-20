@@ -7,6 +7,9 @@ export type Deployment = {
 } | {
     readonly kind: "pilot";
     readonly instance: string;
+} | {
+    readonly kind: "url";
+    readonly url: string;
 };
 export declare class UnknownEnvironmentError extends Error {
     readonly name = "UnknownEnvironmentError";

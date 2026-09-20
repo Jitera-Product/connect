@@ -53,6 +53,17 @@ test("a bare pilot number is rejected rather than guessed at", () => {
   assert.throws(() => parseEnvironment("06"), UnknownEnvironmentError);
 });
 
+test("a deployment can be named by its address", () => {
+  assert.deepEqual(parseEnvironment("https://jitera.ai"), { kind: "url", url: "https://jitera.ai" });
+  assert.deepEqual(parseEnvironment(" https://jitera.ai/ "), { kind: "url", url: "https://jitera.ai" });
+  assert.deepEqual(parseEnvironment("http://localhost:5173"), { kind: "url", url: "http://localhost:5173" });
+  assert.equal(resolveStudioUrl("https://Studio.Example.com"), "https://Studio.Example.com");
+});
+
+test("an address without a scheme is not guessed at", () => {
+  assert.throws(() => parseEnvironment("jitera.ai"), UnknownEnvironmentError);
+});
+
 test("studio urls follow the deployment naming", () => {
   assert.equal(resolveStudioUrl(), "https://studio.jitera.app");
   assert.equal(resolveStudioUrl("studio-stage"), "https://studio-stage.pilot.jitera.app");
