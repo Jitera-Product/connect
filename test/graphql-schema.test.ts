@@ -419,3 +419,37 @@ test("an error with no code is passed through untouched", async () => {
   );
   await server.close();
 });
+
+test("a deployment without canManageApiKey or per falls back to the older query", async () => {
+  const server = await recordingServer((_operation, variables, res) => {
+    const scope = (variables["project"] ?? {}) as Record<string, unknown>;
+    if ("per" in scope) {
+      json(res, {
+        errors: [
+          { message: "Field 'canManageApiKey' doesn't exist on type 'Project'" },
+          { message: "InputObject 'ProjectParams' doesn't accept argument 'per'" },
+        ],
+      });
+      return;
+    }
+    json(res, { data: { projects: { projects: [{ uuid: "u1", name: "Acme" }], errors: null } } });
+  });
+
+  const projects = await listProjects({ automationUrl: server.url, accessToken: "t" }, TEAM);
+
+  assert.deepEqual(projects, [{ uuid: "u1", name: "Acme", canManageApiKey: true }]);
+  const calls = server.requests.filter((r) => r.operation === "ConnectProjects");
+  assert.equal(calls.length, 2, "one attempt, one fallback");
+  assert.ok(!("per" in scopeOf(calls[1]!)), "the fallback sends no per");
+  await server.close();
+});
+
+test("other query errors are not mistaken for an older deployment", async () => {
+  const server = await recordingServer((_operation, _vars, res) =>
+    json(res, { errors: [{ message: "Field 'name' doesn't exist on type 'Project'" }] })
+  );
+
+  await assert.rejects(() => listProjects({ automationUrl: server.url, accessToken: "t" }, TEAM), GraphqlError);
+  assert.equal(server.requests.filter((r) => r.operation === "ConnectProjects").length, 1);
+  await server.close();
+});

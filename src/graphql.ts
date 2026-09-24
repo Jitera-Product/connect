@@ -142,6 +142,20 @@ const PROJECTS_DOCUMENT = `query ConnectProjects($project: ProjectParams) {
   }
 }`;
 
+// Deployments that predate canManageApiKey and the per argument reject the
+// document above outright, so the listing falls back to this one there.
+const LEGACY_PROJECTS_DOCUMENT = `query ConnectProjects($project: ProjectParams) {
+  projects(project: $project) {
+    projects {
+      uuid
+      name
+    }
+    errors
+  }
+}`;
+
+const UNSUPPORTED_BY_OLDER_DEPLOYMENTS = /canManageApiKey|'per'/;
+
 const TEAMS_DOCUMENT = `query ConnectTeams {
   teams {
     slug
@@ -182,21 +196,36 @@ interface ProjectsPayload {
 
 const PROJECT_PAGE_SIZE = 100;
 
-async function projectsForScope(
+async function fetchProjects(
+  document: string,
   scope: Record<string, unknown>,
   transport: GraphqlTransport
 ): Promise<ProjectSummary[]> {
-  const data = await query<ProjectsPayload>(
-    "ConnectProjects",
-    PROJECTS_DOCUMENT,
-    { project: { ...scope, per: PROJECT_PAGE_SIZE } },
-    transport
-  );
+  const data = await query<ProjectsPayload>("ConnectProjects", document, { project: scope }, transport);
 
   const messages = toErrorMessages(data.projects?.errors);
   if (messages.length) throw new GraphqlError("ConnectProjects", messages);
 
   return [...(data.projects?.projects ?? [])];
+}
+
+async function projectsForScope(
+  scope: Record<string, unknown>,
+  transport: GraphqlTransport
+): Promise<ProjectSummary[]> {
+  try {
+    return await fetchProjects(PROJECTS_DOCUMENT, { ...scope, per: PROJECT_PAGE_SIZE }, transport);
+  } catch (error) {
+    const olderDeployment =
+      error instanceof GraphqlError &&
+      error.errors.some((message) => UNSUPPORTED_BY_OLDER_DEPLOYMENTS.test(message));
+    if (!olderDeployment) throw error;
+
+    // Without canManageApiKey every project is offered; key creation is still
+    // authorised server-side and reports a refusal plainly.
+    const projects = await fetchProjects(LEGACY_PROJECTS_DOCUMENT, scope, transport);
+    return projects.map((project) => ({ ...project, canManageApiKey: true }));
+  }
 }
 
 function scopesFor(organisation?: Organisation): Record<string, unknown>[] {
