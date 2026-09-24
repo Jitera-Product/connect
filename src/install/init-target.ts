@@ -12,12 +12,6 @@ export type InitTarget =
   | { readonly kind: "write"; readonly dir: string; readonly repoRoot?: string }
   | { readonly kind: "refuse"; readonly reason: string };
 
-export const NOT_A_REPOSITORY =
-  "not inside a git repository. Instructions written outside a repository are " +
-  "invisible to assistants that read AGENTS.md from the repository root, and an " +
-  "out-of-repo CLAUDE.md leaks into every project below it. Run this from inside " +
-  "the repository you want to connect.";
-
 export function broadDirectoryReason(dir: string): string {
   return (
     `refusing to write to ${dir}: a CLAUDE.md there would apply to every project ` +
@@ -47,8 +41,7 @@ export function chooseInitTarget({
   readonly gitRoot: string | undefined;
   readonly home?: string;
 }): InitTarget {
-  if (!gitRoot) return { kind: "refuse", reason: NOT_A_REPOSITORY };
   if (isBroadDirectory(cwd, home)) return { kind: "refuse", reason: broadDirectoryReason(cwd) };
-  if (sameDirectory(cwd, gitRoot)) return { kind: "write", dir: cwd };
+  if (!gitRoot || sameDirectory(cwd, gitRoot)) return { kind: "write", dir: cwd };
   return { kind: "write", dir: cwd, repoRoot: gitRoot };
 }

@@ -10,8 +10,15 @@ import { isolatedTmpdir } from "./helpers.ts";
 // never assumed. The home directory and the filesystem root are never a target,
 // because a CLAUDE.md there governs every project beneath it.
 
-test("outside any repository is refused", () => {
-  const out = chooseInitTarget({ cwd: isolatedTmpdir(), gitRoot: undefined, home: "/nowhere" });
+test("outside any repository the folder it was run in is written to", () => {
+  const dir = isolatedTmpdir();
+  const out = chooseInitTarget({ cwd: dir, gitRoot: undefined, home: "/nowhere" });
+  assert.deepEqual(out, { kind: "write", dir });
+});
+
+test("a home directory is refused even outside a repository", () => {
+  const home = isolatedTmpdir();
+  const out = chooseInitTarget({ cwd: home, gitRoot: undefined, home });
   assert.equal(out.kind, "refuse");
 });
 

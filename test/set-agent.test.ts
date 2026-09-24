@@ -37,14 +37,23 @@ test("set-agent rejects an unrecognised argument", async () => {
   assert.match(stderr, /unrecognised argument/);
 });
 
-test("set-agent refuses to run outside a git repository", async () => {
+test("set-agent outside a git repository reads the binding in the folder", async () => {
+  const dir = isolatedTmpdir();
+  writeFileSync(join(dir, ".jitera.json"), JSON.stringify({ environment: "studio", project: "p1", agents: ["a1"] }), "utf8");
+
+  const { code } = await runNode(CONNECT, { args: ["set-agent", "--all"], cwd: dir, env: OFFLINE });
+  assert.equal(code, 0);
+  assert.ok(!("agents" in markerIn(dir)), "--all clears the selection");
+});
+
+test("set-agent in an unbound folder outside a repository asks for init", async () => {
   const { code, stderr } = await runNode(CONNECT, {
     args: ["set-agent"],
     cwd: isolatedTmpdir(),
     env: OFFLINE,
   });
-  assert.equal(code, 2);
-  assert.match(stderr, /not a git repository/);
+  assert.notEqual(code, 0);
+  assert.match(stderr, /not bound to a project/);
 });
 
 test("an unbound repository is told to run init first", async () => {

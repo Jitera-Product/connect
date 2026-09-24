@@ -18,11 +18,10 @@ const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const USAGE = [
     "usage: npx @jitera/connect init [--env=<environment>] [--dry-run]",
     "",
-    "Writes the shared, committable connection files at the root of the current",
-    "git repository: an AGENTS.md block for assistants that read it natively, a",
-    "CLAUDE.md that imports it, and a .jitera.json recording which deployment",
-    "(and optionally which project) this repository belongs to. Commit all three",
-    "so your team's assistants see them.",
+    "Writes the shared connection files in the current folder: an AGENTS.md",
+    "block for assistants that read it natively, a CLAUDE.md that imports it, and",
+    "a .jitera.json recording which deployment and project this folder belongs to.",
+    "In a git repository, commit all three so your team's assistants see them.",
 ].join("\n");
 function parseArgs(argv) {
     const args = { dryRun: false, help: false };

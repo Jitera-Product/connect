@@ -5,7 +5,6 @@ import { loadCliSession, transportFor } from "../cli-session.js";
 import { DeviceFlowError, refreshAccessToken } from "../device-flow.js";
 import { GraphqlError, listAgents } from "../graphql.js";
 import { dirname } from "node:path";
-import { resolveGitRoot } from "../install/project-root.js";
 import { readProjectMarker, writeProjectMarker } from "../project-marker.js";
 import { InvalidChoiceError, NoInputError, SelectCancelledError, chooseManyFrom, } from "../select.js";
 import { createTheme } from "../theme.js";
@@ -51,10 +50,6 @@ await runCommand(async () => {
     if (args.unknown) {
         process.stderr.write(`error: unrecognised argument "${args.unknown}"\n${USAGE}\n`);
         endWith(2);
-    }
-    const projectRoot = resolveGitRoot(process.cwd());
-    if (!projectRoot) {
-        fail("this is not a git repository, and the binding belongs at a repository root.", 2);
     }
     // The selection lives beside the project binding, so there has to be one.
     // Walk up from here rather than read the git root: init writes the binding

@@ -34,14 +34,27 @@ test("init writes both files where it is run", async () => {
   assert.match(readFileSync(join(root, "CLAUDE.md"), "utf8"), /@AGENTS\.md/);
 });
 
-test("init refuses to run outside a git repository", async () => {
+test("init outside a git repository binds the folder it is run in", async () => {
   const dir = isolatedTmpdir();
-  const { code, stderr } = await runNode(CONNECT, { args: ["init"], cwd: dir, env: OFFLINE });
+  const { code, stdout } = await runNode(CONNECT, { args: ["init"], cwd: dir, env: OFFLINE });
+
+  assert.equal(code, 0, stdout);
+  assert.ok(existsSync(join(dir, "AGENTS.md")));
+  assert.ok(existsSync(join(dir, "CLAUDE.md")));
+  assert.ok(existsSync(join(dir, ".jitera.json")));
+});
+
+test("init outside a git repository still refuses the home directory", async () => {
+  const home = isolatedTmpdir();
+  const { code, stderr } = await runNode(CONNECT, {
+    args: ["init"],
+    cwd: home,
+    env: { ...OFFLINE, HOME: home, USERPROFILE: home },
+  });
 
   assert.equal(code, 2);
-  assert.match(stderr, /git repository/);
-  assert.ok(!existsSync(join(dir, "AGENTS.md")), "must not write outside a repository");
-  assert.ok(!existsSync(join(dir, "CLAUDE.md")), "must not write outside a repository");
+  assert.match(stderr, /every project beneath it/);
+  assert.ok(!existsSync(join(home, "CLAUDE.md")));
 });
 
 test("init run twice leaves the files unchanged", async () => {

@@ -6,7 +6,6 @@ import { DeviceFlowError, refreshAccessToken } from "../device-flow.ts";
 import { GraphqlError, listAgents, type AgentSummary } from "../graphql.ts";
 import { dirname } from "node:path";
 
-import { resolveGitRoot } from "../install/project-root.ts";
 import { readProjectMarker, writeProjectMarker } from "../project-marker.ts";
 import {
   InvalidChoiceError,
@@ -65,11 +64,6 @@ await runCommand(async () => {
   if (args.unknown) {
     process.stderr.write(`error: unrecognised argument "${args.unknown}"\n${USAGE}\n`);
     endWith(2);
-  }
-
-  const projectRoot = resolveGitRoot(process.cwd());
-  if (!projectRoot) {
-    fail("this is not a git repository, and the binding belongs at a repository root.", 2);
   }
 
   // The selection lives beside the project binding, so there has to be one.

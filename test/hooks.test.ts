@@ -165,7 +165,7 @@ test("a marker with no project says so, because a user-level key cannot infer on
   const cwd = markedRepo({ environment: "studio" });
   const ctx = await context(SESSION_START, { source: "startup", cwd }, CONFIGURED);
   assert.match(ctx, /records no project/);
-  assert.match(ctx, /init --project=<uuid>/);
+  assert.match(ctx, /npx @jitera\/connect init$/m);
 });
 
 test("a marker naming a project adds no such note", async () => {

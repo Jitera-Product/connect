@@ -6,7 +6,6 @@ export type InitTarget = {
     readonly kind: "refuse";
     readonly reason: string;
 };
-export declare const NOT_A_REPOSITORY: string;
 export declare function broadDirectoryReason(dir: string): string;
 export declare function isBroadDirectory(dir: string, home?: string): boolean;
 export declare function chooseInitTarget({ cwd, gitRoot, home, }: {
