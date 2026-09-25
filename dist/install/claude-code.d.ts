@@ -8,6 +8,16 @@ export interface CommandRunner {
         stderr: string;
     };
 }
+export interface SpawnPlan {
+    readonly file: string;
+    readonly args: string[];
+    readonly shell: boolean;
+}
+export declare function spawnPlans(command: string, args: readonly string[], platform?: string): SpawnPlan[];
+export declare function neverStarted(result: {
+    readonly status: number | null;
+    readonly error?: NodeJS.ErrnoException | undefined;
+}): boolean;
 export declare function isClaudeCodeAvailable(run?: CommandRunner): boolean;
 export interface ClaudeInstallOptions {
     readonly apiKey: string;

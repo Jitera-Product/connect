@@ -6,16 +6,42 @@ export const PLUGIN_NAME = "jitera-connect";
 // network. Without a bound, an unreachable marketplace is indistinguishable
 // from a slow install: it just sits there. This fails instead.
 const STEP_TIMEOUT_MS = 120_000;
+// The direct spawn stays first: it is how every machine that works today works,
+// and the shell is only there for Windows, where `claude` is usually a .cmd
+// shim that Node refuses to execute without one. cmd.exe resolves the shim, the
+// .exe the native installer writes, and a plain PATH lookup alike.
+export function spawnPlans(command, args, platform = process.platform) {
+    const direct = { file: command, args: [...args], shell: false };
+    if (platform !== "win32")
+        return [direct];
+    const quote = (part) => `"${part.replace(/"/g, '""')}"`;
+    return [direct, { file: quote(command), args: args.map(quote), shell: true }];
+}
+// Whether a spawn never produced a process, so trying again cannot run the
+// command twice. A timeout or a signal means it did run - a second attempt
+// there would repeat a network call at best.
+export function neverStarted(result) {
+    return result.status === null && result.error !== undefined && result.error.code !== "ETIMEDOUT";
+}
 const defaultRunner = (command, args) => {
-    const result = spawnSync(command, [...args], {
-        encoding: "utf8",
-        timeout: STEP_TIMEOUT_MS,
-    });
-    return {
-        status: result.status ?? 1,
-        stdout: result.stdout ?? "",
-        stderr: result.stderr ?? "",
-    };
+    const plans = spawnPlans(command, args);
+    let failure;
+    for (const plan of plans) {
+        const result = spawnSync(plan.file, plan.args, {
+            encoding: "utf8",
+            timeout: STEP_TIMEOUT_MS,
+            shell: plan.shell,
+        });
+        const attempt = {
+            status: result.status ?? 1,
+            stdout: result.stdout ?? "",
+            stderr: result.stderr ?? result.error?.message ?? "",
+        };
+        if (!neverStarted(result))
+            return attempt;
+        failure = attempt;
+    }
+    return failure ?? { status: 1, stdout: "", stderr: "" };
 };
 export function isClaudeCodeAvailable(run = defaultRunner) {
     return run("claude", ["--version"]).status === 0;

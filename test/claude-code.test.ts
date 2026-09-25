@@ -7,6 +7,8 @@ import {
   PLUGIN_NAME,
   installClaudeCodePlugin,
   isClaudeCodeAvailable,
+  neverStarted,
+  spawnPlans,
   type CommandRunner,
 } from "../src/install/claude-code.ts";
 
@@ -29,6 +31,38 @@ function runner(
 }
 
 const INSTALL_KEY = `plugin install ${PLUGIN_NAME}@${MARKETPLACE_NAME}`;
+
+test("windows tries claude directly first, then through a shell for the .cmd shim", () => {
+  const plans = spawnPlans("claude", ["plugin", "install", "a b"], "win32");
+
+  assert.deepEqual(plans[0], { file: "claude", args: ["plugin", "install", "a b"], shell: false });
+  assert.deepEqual(plans[1], {
+    file: '"claude"',
+    args: ['"plugin"', '"install"', '"a b"'],
+    shell: true,
+  });
+});
+
+test("other platforms spawn claude directly and nothing else", () => {
+  assert.deepEqual(spawnPlans("claude", ["--version"], "darwin"), [
+    { file: "claude", args: ["--version"], shell: false },
+  ]);
+});
+
+test("a command that never started may be retried", () => {
+  for (const code of ["ENOENT", "EINVAL", "EACCES"]) {
+    const error = Object.assign(new Error("spawn failed"), { code });
+    assert.equal(neverStarted({ status: null, error }), true, code);
+  }
+});
+
+test("a command that ran is never run a second time", () => {
+  assert.equal(neverStarted({ status: 1 }), false, "non-zero exit");
+  assert.equal(neverStarted({ status: 0 }), false, "success");
+  assert.equal(neverStarted({ status: null }), false, "killed by a signal, which leaves no error");
+  const timeout = Object.assign(new Error("timed out"), { code: "ETIMEDOUT" });
+  assert.equal(neverStarted({ status: null, error: timeout }), false, "timed out");
+});
 
 test("claude code is detected by asking the binary for its version", () => {
   const { run, calls } = runner();
