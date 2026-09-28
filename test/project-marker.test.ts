@@ -36,8 +36,6 @@ test("reads a self-hosted deployment address back", () => {
 });
 
 test("drops an address that carries shell syntax", () => {
-  // The address is echoed into a suggested login command in session context, so
-  // a committed marker must not be able to smuggle a second command in.
   const root = isolatedTmpdir();
   for (const hostile of [
     "https://jitera.example.com; rm -rf ~",

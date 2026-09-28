@@ -4,9 +4,7 @@ import { dirname, join } from "node:path";
 export const MARKER_FILENAME = ".jitera.json";
 
 // Environments are studio, studio-stage, studio-NN, or the address of a
-// self-hosted deployment. The address is echoed into a suggested login command
-// and into discovery, so it is kept to characters that are literal in a shell
-// and in a url. Anything else in the file is not read back at all.
+// self-hosted deployment. Anything else in the file is not read back at all.
 const SAFE_ENVIRONMENT =
   /^(?:[A-Za-z0-9-]{1,64}|https?:\/\/[A-Za-z0-9._~:/?#@!&'()*+,;=%-]{1,200})$/;
 
