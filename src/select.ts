@@ -90,6 +90,19 @@ export async function chooseFrom<T>({
   return picked;
 }
 
+function viewportFor(
+  count: number,
+  viewport?: number
+): { rows: number; windowed: boolean; painted: number } {
+  const rows = Math.max(1, Math.min(count, viewport ?? Math.max(1, (process.stdout.rows ?? 24) - 5)));
+  const windowed = rows < count;
+  return { rows, windowed, painted: windowed ? rows + 1 : rows };
+}
+
+function rowWidth(columns?: number): number {
+  return Math.max(20, (columns ?? process.stdout.columns ?? 80) - 8);
+}
+
 // What node's key decoder reports. Matching on the name rather than the raw
 // bytes is what makes this behave the same everywhere: the same arrow key
 // arrives as a different sequence depending on the terminal, and on Windows it
@@ -121,6 +134,10 @@ export interface SelectOptions<T> {
   readonly theme: Theme;
   readonly input: SelectInput;
   readonly output: SelectOutput;
+  // Visible rows. A list with more of them than the terminal is tall would
+  // otherwise scroll the highlight out of reach of the cursor arithmetic.
+  readonly viewport?: number;
+  readonly columns?: number;
 }
 
 type Action =
@@ -143,38 +160,61 @@ export function parseKey(str: string | undefined, key: Key, count: number): Acti
   return { kind: "none" };
 }
 
-export function interactiveSelect<T>({ items, prompt, label, theme, input, output }: SelectOptions<T>): Promise<T> {
+export function interactiveSelect<T>({
+  items,
+  prompt,
+  label,
+  theme,
+  input,
+  output,
+  viewport,
+  columns,
+}: SelectOptions<T>): Promise<T> {
   if (items.length === 0) {
     return Promise.reject(new Error("there is nothing to select from"));
   }
 
+  const width = rowWidth(columns);
+  const { rows, windowed, painted } = viewportFor(items.length, viewport);
+
   return new Promise<T>((resolve, reject) => {
     let highlighted = 0;
+    let top = 0;
 
     const row = (index: number): string => {
-      const text = label(items[index] as T);
+      const text = oneLine(label(items[index] as T), width);
       return index === highlighted ? `  ${theme.accent("❯")} ${theme.bold(text)}` : `    ${text}`;
     };
 
+    const scroll = (): void => {
+      if (highlighted < top) top = highlighted;
+      else if (highlighted >= top + rows) top = highlighted - rows + 1;
+      top = Math.max(0, Math.min(top, items.length - rows));
+    };
+
     const paintItems = (): void => {
-      for (let index = 0; index < items.length; index += 1) {
-        output.write(`\r[2K${row(index)}\n`);
+      scroll();
+      for (let offset = 0; offset < rows; offset += 1) {
+        output.write(`\r\u001b[2K${row(top + offset)}\n`);
+      }
+      if (windowed) {
+        output.write(`\r\u001b[2K    ${theme.dim(`${highlighted + 1}/${items.length}`)}\n`);
       }
     };
 
     const repaint = (): void => {
-      output.write(`[${items.length}A`);
+      output.write(`\u001b[${painted}A`);
       paintItems();
     };
 
-    // Everything drawn (blank line, prompt, blank line, one line per item) is
+    // Everything drawn (blank line, prompt, blank line, one line per row) is
     // erased again on the way out, so the caller decides what remains on screen.
     const finish = (): void => {
       input.off("keypress", onKey);
       input.setRawMode?.(false);
       input.pause?.();
-      output.write(`[${items.length + 3}A\r[J`);
-      output.write("[?25h");
+      output.write(`\u001b[${painted + 3}A\r\u001b[J`);
+      output.write("\u001b[?25h");
     };
 
     let settled = false;
@@ -198,7 +238,7 @@ export function interactiveSelect<T>({ items, prompt, label, theme, input, outpu
       }
     };
 
-    output.write("[?25l");
+    output.write("\u001b[?25l");
     output.write(`\n  ${theme.bold(prompt)} ${theme.dim("↑/↓ then enter")}\n\n`);
     paintItems();
 
@@ -249,10 +289,6 @@ export interface MultiSelectOptions<T> extends SelectOptions<T> {
   // Items to start ticked, so re-running the command shows the current state
   // rather than a blank slate.
   readonly selected?: (item: T) => boolean;
-  // Visible rows. A project with more agents than the terminal is tall would
-  // otherwise scroll the list out of reach of the cursor arithmetic.
-  readonly viewport?: number;
-  readonly columns?: number;
 }
 
 // Checkbox selection: space toggles, enter confirms. Returns the ticked items,
@@ -274,14 +310,9 @@ export function multiSelect<T>({
     return Promise.reject(new Error("there is nothing to select from"));
   }
 
-  const width = Math.max(20, (columns ?? process.stdout.columns ?? 80) - 8);
+  const width = rowWidth(columns);
   // Leave room for the blank line, the prompt, the blank line and the footer.
-  const rows = Math.max(
-    1,
-    Math.min(items.length, viewport ?? Math.max(1, (process.stdout.rows ?? 24) - 5))
-  );
-  const windowed = rows < items.length;
-  const painted = windowed ? rows + 1 : rows;
+  const { rows, windowed, painted } = viewportFor(items.length, viewport);
 
   return new Promise<T[]>((resolve, reject) => {
     let highlighted = 0;

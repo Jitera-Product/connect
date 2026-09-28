@@ -43,6 +43,8 @@ export interface SelectOptions<T> {
     readonly theme: Theme;
     readonly input: SelectInput;
     readonly output: SelectOutput;
+    readonly viewport?: number;
+    readonly columns?: number;
 }
 type Action = {
     readonly kind: "move";
@@ -58,7 +60,7 @@ type Action = {
     readonly kind: "none";
 };
 export declare function parseKey(str: string | undefined, key: Key, count: number): Action;
-export declare function interactiveSelect<T>({ items, prompt, label, theme, input, output }: SelectOptions<T>): Promise<T>;
+export declare function interactiveSelect<T>({ items, prompt, label, theme, input, output, viewport, columns, }: SelectOptions<T>): Promise<T>;
 type MultiAction = {
     readonly kind: "move";
     readonly delta: 1 | -1;
@@ -79,8 +81,6 @@ export declare function parseMultiKey(str: string | undefined, key: Key): MultiA
 export interface MultiSelectOptions<T> extends SelectOptions<T> {
     readonly requireOne?: boolean;
     readonly selected?: (item: T) => boolean;
-    readonly viewport?: number;
-    readonly columns?: number;
 }
 export declare function multiSelect<T>({ items, prompt, label, theme, input, output, selected, viewport, columns, requireOne, }: MultiSelectOptions<T>): Promise<T[]>;
 export declare function chooseManyFrom<T>({ items, prompt, label, theme, selected, requireOne, }: {

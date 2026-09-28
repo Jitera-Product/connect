@@ -68,6 +68,14 @@ export async function chooseFrom({ items, prompt, label, theme, }) {
         throw new InvalidChoiceError(answer);
     return picked;
 }
+function viewportFor(count, viewport) {
+    const rows = Math.max(1, Math.min(count, viewport ?? Math.max(1, (process.stdout.rows ?? 24) - 5)));
+    const windowed = rows < count;
+    return { rows, windowed, painted: windowed ? rows + 1 : rows };
+}
+function rowWidth(columns) {
+    return Math.max(20, (columns ?? process.stdout.columns ?? 80) - 8);
+}
 export function parseKey(str, key, count) {
     if (key.ctrl && key.name === "c")
         return { kind: "cancel" };
@@ -86,33 +94,47 @@ export function parseKey(str, key, count) {
     }
     return { kind: "none" };
 }
-export function interactiveSelect({ items, prompt, label, theme, input, output }) {
+export function interactiveSelect({ items, prompt, label, theme, input, output, viewport, columns, }) {
     if (items.length === 0) {
         return Promise.reject(new Error("there is nothing to select from"));
     }
+    const width = rowWidth(columns);
+    const { rows, windowed, painted } = viewportFor(items.length, viewport);
     return new Promise((resolve, reject) => {
         let highlighted = 0;
+        let top = 0;
         const row = (index) => {
-            const text = label(items[index]);
+            const text = oneLine(label(items[index]), width);
             return index === highlighted ? `  ${theme.accent("❯")} ${theme.bold(text)}` : `    ${text}`;
         };
+        const scroll = () => {
+            if (highlighted < top)
+                top = highlighted;
+            else if (highlighted >= top + rows)
+                top = highlighted - rows + 1;
+            top = Math.max(0, Math.min(top, items.length - rows));
+        };
         const paintItems = () => {
-            for (let index = 0; index < items.length; index += 1) {
-                output.write(`\r[2K${row(index)}\n`);
+            scroll();
+            for (let offset = 0; offset < rows; offset += 1) {
+                output.write(`\r\u001b[2K${row(top + offset)}\n`);
+            }
+            if (windowed) {
+                output.write(`\r\u001b[2K    ${theme.dim(`${highlighted + 1}/${items.length}`)}\n`);
             }
         };
         const repaint = () => {
-            output.write(`[${items.length}A`);
+            output.write(`\u001b[${painted}A`);
             paintItems();
         };
-        // Everything drawn (blank line, prompt, blank line, one line per item) is
+        // Everything drawn (blank line, prompt, blank line, one line per row) is
         // erased again on the way out, so the caller decides what remains on screen.
         const finish = () => {
             input.off("keypress", onKey);
             input.setRawMode?.(false);
             input.pause?.();
-            output.write(`[${items.length + 3}A\r[J`);
-            output.write("[?25h");
+            output.write(`\u001b[${painted + 3}A\r\u001b[J`);
+            output.write("\u001b[?25h");
         };
         let settled = false;
         const onKey = (str, key) => {
@@ -138,7 +160,7 @@ export function interactiveSelect({ items, prompt, label, theme, input, output }
                 reject(new SelectCancelledError());
             }
         };
-        output.write("[?25l");
+        output.write("\u001b[?25l");
         output.write(`\n  ${theme.bold(prompt)} ${theme.dim("↑/↓ then enter")}\n\n`);
         paintItems();
         // Node reassembles split escape sequences and names each key, so the same
@@ -184,11 +206,9 @@ export function multiSelect({ items, prompt, label, theme, input, output, select
     if (items.length === 0) {
         return Promise.reject(new Error("there is nothing to select from"));
     }
-    const width = Math.max(20, (columns ?? process.stdout.columns ?? 80) - 8);
+    const width = rowWidth(columns);
     // Leave room for the blank line, the prompt, the blank line and the footer.
-    const rows = Math.max(1, Math.min(items.length, viewport ?? Math.max(1, (process.stdout.rows ?? 24) - 5)));
-    const windowed = rows < items.length;
-    const painted = windowed ? rows + 1 : rows;
+    const { rows, windowed, painted } = viewportFor(items.length, viewport);
     return new Promise((resolve, reject) => {
         let highlighted = 0;
         let top = 0;

@@ -132,6 +132,120 @@ test("an empty list rejects instead of hanging", async () => {
   );
 });
 
+// The reported bug: with a long list the highlight scrolled out of sight, and
+// each redraw left the previous copy behind so the list seemed to duplicate.
+// This models the terminal the picker writes to, so the assertions are about
+// what a person actually sees.
+function screenOf(chunks: readonly string[]): string[] {
+  const rows: string[] = [];
+  let row = 0;
+  let column = 0;
+  const line = (): string => (rows[row] ??= "");
+
+  for (const part of chunks.join("").split(/(\u001b\[\??\d*[A-Za-z])/)) {
+    const escape = /^\u001b\[\??(\d*)([A-Za-z])$/.exec(part);
+    if (escape) {
+      const count = Number(escape[1]) || 1;
+      if (escape[2] === "A") row = Math.max(0, row - count);
+      else if (escape[2] === "J") rows.length = row + 1;
+      else if (escape[2] === "K") rows[row] = "";
+      continue;
+    }
+    for (const character of part) {
+      if (character === "\n") {
+        row += 1;
+        column = 0;
+      } else if (character === "\r") {
+        column = 0;
+      } else {
+        const current = line();
+        rows[row] = current.slice(0, column) + character + current.slice(column + 1);
+        column += 1;
+      }
+    }
+  }
+  return rows;
+}
+
+function windowedSelecting(count = 30, viewport = 5, columns = 80) {
+  const items = Array.from({ length: count }, (_item, index) => `project ${index + 1}`);
+  const input = new FakeInput();
+  const written: string[] = [];
+  const picked = interactiveSelect({
+    items,
+    prompt: "Which project?",
+    label: (item) => item,
+    theme,
+    input,
+    output: { write: (chunk: string) => written.push(chunk) },
+    viewport,
+    columns,
+  });
+  const press = (...keys: string[]) => {
+    for (const key of keys) input.emit("data", Buffer.from(key));
+  };
+  return { picked, press, input, screen: () => screenOf(written) };
+}
+
+test("a long list draws a window around the highlight, so the selection stays visible", async () => {
+  const { picked, press, screen } = windowedSelecting();
+  press(...Array.from({ length: 12 }, () => "\u001b[B"));
+  const rows = screen().filter((row) => row.trim() !== "");
+  assert.ok(rows.some((row) => row.includes("❯ project 13")), "the highlighted project is on screen");
+  assert.ok(rows.some((row) => row.includes("13/30")), "the position in the full list is shown");
+  press("\r");
+  assert.equal(await picked, "project 13");
+});
+
+test("the window scrolls back up without leaving a copy behind", async () => {
+  const { picked, press, screen } = windowedSelecting();
+  press(...Array.from({ length: 20 }, () => "\u001b[B"));
+  press(...Array.from({ length: 15 }, () => "\u001b[A"));
+  const rows = screen().filter((row) => row.trim() !== "");
+  const shown = rows.filter((row) => /project \d+/.test(row));
+  assert.equal(shown.length, new Set(shown).size, `no row is drawn twice: ${JSON.stringify(shown)}`);
+  assert.ok(rows.some((row) => row.includes("❯ project 6")), "the highlight is still on screen");
+  press("\r");
+  assert.equal(await picked, "project 6");
+});
+
+test("a name too long for the terminal is cut to one line", async () => {
+  const input = new FakeInput();
+  const written: string[] = [];
+  const items = ["a project name long enough to wrap in a narrow terminal", "short"];
+  const picked = interactiveSelect({
+    items,
+    prompt: "Which project?",
+    label: (item) => item,
+    theme,
+    input,
+    output: { write: (chunk: string) => written.push(chunk) },
+    columns: 30,
+  });
+  input.emit("data", Buffer.from("\u001b[B"));
+  const rows = screenOf(written);
+  assert.ok(
+    rows.some((row) => row.includes("a project name long")),
+    `the name is drawn: ${JSON.stringify(rows)}`
+  );
+  assert.ok(
+    !rows.some((row) => row.includes("terminal")),
+    `the name is cut rather than wrapped: ${JSON.stringify(rows)}`
+  );
+  input.emit("data", Buffer.from("\r"));
+  await picked;
+});
+
+test("a short list is drawn whole, with no counter", async () => {
+  const { picked, press, screen } = windowedSelecting(3, 5, 80);
+  press("\u001b[B");
+  const rows = screen().filter((row) => row.trim() !== "");
+  assert.ok(rows.some((row) => row.includes("❯ project 2")));
+  assert.ok(!rows.some((row) => row.includes("/3")), "a list that fits shows no counter");
+  press("\r");
+  assert.equal(await picked, "project 2");
+});
+
 function multiSelecting(
   items: readonly string[] = ["alpha", "beta", "gamma"],
   selected?: (item: string) => boolean,
