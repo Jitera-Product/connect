@@ -131,6 +131,13 @@ test("an unconfigured session in a marked repo names the exact login command", a
   assert.match(ctx, /login --env=studio-05 --install/);
 });
 
+test("a self-hosted repo is named by its address, with the endpoint flag", async () => {
+  const cwd = markedRepo({ environment: "https://jitera.example.com" });
+  const ctx = await context(SESSION_START, { source: "startup", cwd });
+  assert.match(ctx, /login --endpoint=https:\/\/jitera\.example\.com --install/);
+  assert.ok(!ctx.includes("--env=https"), "the address is not passed as an environment name");
+});
+
 test("a configured session warns when the plugin environment differs from the repo's", async () => {
   const cwd = markedRepo({ environment: "studio-05" });
   const ctx = await context(

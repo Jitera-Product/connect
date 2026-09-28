@@ -28,7 +28,7 @@
     "environment": {
       "type": "string",
       "title": "Environment",
-      "description": "Leave as studio for Jitera Cloud. Use studio-stage for staging, or studio-NN for a numbered pilot such as studio-04.",
+      "description": "Leave as studio for Jitera Cloud. Use studio-stage for staging, or studio-NN for a numbered pilot such as studio-04. On a self-hosted deployment, use its address, such as https://jitera.example.com.",
       "default": "studio",
       "required": true
     }

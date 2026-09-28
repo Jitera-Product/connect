@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { runNode } from "./helpers.ts";
 
@@ -66,6 +69,16 @@ function replayServer(options: ReplayOptions = {}): Promise<Replay> {
         res.writeHead(status, { "content-type": "application/json" });
         res.end(JSON.stringify(body));
       };
+
+      if (req.url === "/p/jitera-connect.json") {
+        const origin = `http://${req.headers.host}`;
+        return json(200, {
+          mcpUrl: `${origin}/mcp`,
+          apiBaseUrl: `${origin}/v1`,
+          automationUrl: origin,
+          brand: "Acme",
+        });
+      }
 
       if (req.url === "/oauth/authorize_device") return json(200, DEVICE_AUTHORIZATION);
 
@@ -140,6 +153,28 @@ test("a deployment with user-level keys needs no project at all", async () => {
   assert.equal(result.scope, "user");
   assert.ok(!server.seen.includes("gql ConnectProjects"), "no project listing for a user key");
   assert.ok(!server.seen.includes("gql ConnectTeams"), "no organisation lookup for a user key");
+  await server.close();
+});
+
+test("login takes a deployment address and keeps it for later commands", async () => {
+  const server = await replayServer({
+    userKeyResponse: {
+      data: { createApiKey: { rawKey: "sk-endpoint-1", errors: null, apiKey: null } },
+    },
+  });
+  const configDir = mkdtempSync(join(tmpdir(), "jc-endpoint-"));
+  const { code, stdout } = await runNode(LOGIN, {
+    args: ["--json", `--endpoint=${server.url}`],
+    env: { JITERA_CONNECT_CONFIG_DIR: configDir },
+  });
+
+  assert.equal(code, 0, `login exited ${code}: ${stdout}`);
+  const session = JSON.parse(readFileSync(join(configDir, "session.json"), "utf8")) as {
+    environment: string;
+    automationUrl: string;
+  };
+  assert.equal(session.automationUrl, server.url, "signs in against the named deployment");
+  assert.equal(session.environment, server.url, "the address is what later commands reuse");
   await server.close();
 });
 

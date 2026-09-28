@@ -41,7 +41,8 @@ writeSessionStatus(input.session_id, {
 });
 
 if (marker?.environment) {
-  const login = `npx @jitera/connect login --env=${marker.environment} --install`;
+  const flag = /^https?:\/\//.test(marker.environment) ? "--endpoint" : "--env";
+  const login = `npx @jitera/connect login ${flag}=${marker.environment} --install`;
   if (!apiKey) {
     directive +=
       `\n\nThis repository declares its connection in .jitera.json ` +

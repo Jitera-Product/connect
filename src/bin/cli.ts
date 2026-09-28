@@ -33,6 +33,7 @@ function parseArgs(argv: readonly string[]): Args {
   const args: Args = { scope: "project", dryRun: false, uninstall: false, print: false, skipSkills: false, help: false };
   for (const arg of argv) {
     if (arg.startsWith("--env=")) args.environment = arg.slice("--env=".length);
+    else if (arg.startsWith("--endpoint=")) args.environment = arg.slice("--endpoint=".length);
     else if (arg === "--dry-run") args.dryRun = true;
     else if (arg === "--uninstall") args.uninstall = true;
     else if (arg === "--user") args.scope = "user";
@@ -51,6 +52,7 @@ const USAGE = [
   "",
   "  --env=studio-stage   staging",
   "  --env=studio-04      numbered pilot",
+  "  --endpoint=<url>     address of your deployment, for self-hosted installs",
   "  omit --env for production",
   "",
   "  --user               write user scoped config instead of project scoped",

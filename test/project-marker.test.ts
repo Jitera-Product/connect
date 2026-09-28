@@ -24,6 +24,32 @@ test("write creates a pretty-printed marker with a trailing newline", () => {
   assert.deepEqual(JSON.parse(raw), { environment: "studio-05", project: "abc-123" });
 });
 
+test("reads a self-hosted deployment address back", () => {
+  const root = isolatedTmpdir();
+  writeFileSync(
+    join(root, MARKER_FILENAME),
+    JSON.stringify({ environment: "https://jitera.example.com", project: "abc" }),
+    "utf8"
+  );
+
+  assert.equal(readProjectMarker(root)?.environment, "https://jitera.example.com");
+});
+
+test("drops an address that carries shell syntax", () => {
+  // The address is echoed into a suggested login command in session context, so
+  // a committed marker must not be able to smuggle a second command in.
+  const root = isolatedTmpdir();
+  for (const hostile of [
+    "https://jitera.example.com; rm -rf ~",
+    "https://jitera.example.com/$(id)",
+    "https://jitera.example.com/`id`",
+    "https://jitera.example.com | sh",
+  ]) {
+    writeFileSync(join(root, MARKER_FILENAME), JSON.stringify({ environment: hostile }), "utf8");
+    assert.equal(readProjectMarker(root)?.environment, undefined, hostile);
+  }
+});
+
 test("write preserves keys it does not manage", () => {
   const root = isolatedTmpdir();
   writeFileSync(

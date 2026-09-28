@@ -20,6 +20,7 @@ const USAGE = [
     "usage: npx @jitera/connect login [--env=<environment>] [options]",
     "",
     "  --env=studio-04      target a pilot; omit for production",
+    "  --endpoint=<url>     address of your deployment, for self-hosted installs",
     "  --team=<slug>        skip the team prompt (--org= still works)",
     "  --read-only          create a read-only key (default is read + write)",
     "  --name=<name>        name for the created key",
@@ -33,6 +34,8 @@ function parseArgs(argv) {
             continue;
         else if (arg.startsWith("--env="))
             args.environment = arg.slice("--env=".length);
+        else if (arg.startsWith("--endpoint="))
+            args.environment = arg.slice("--endpoint=".length);
         else if (arg.startsWith("--org="))
             args.organisation = arg.slice("--org=".length);
         else if (arg.startsWith("--team="))
