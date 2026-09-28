@@ -56,6 +56,7 @@ function parseArgs(argv: readonly string[]): Args {
   for (const arg of argv) {
     if (arg === "new-key") continue;
     else if (arg.startsWith("--env=")) args.environment = arg.slice("--env=".length);
+    else if (arg.startsWith("--endpoint=")) args.environment = arg.slice("--endpoint=".length);
     else if (arg.startsWith("--access=")) {
       const value = arg.slice("--access=".length);
       if (value === "read" || value === "read_write") args.access = value;

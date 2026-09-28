@@ -16,7 +16,7 @@ import { createTheme } from "../theme.js";
 import { endWith, runCommand } from "../exit.js";
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const USAGE = [
-    "usage: npx @jitera/connect init [--env=<environment>] [--dry-run]",
+    "usage: npx @jitera/connect init [--env=<environment>] [--endpoint=<url>] [--dry-run]",
     "",
     "Writes the shared connection files in the current folder: an AGENTS.md",
     "block for assistants that read it natively, a CLAUDE.md that imports it, and",
@@ -30,6 +30,8 @@ function parseArgs(argv) {
             continue;
         else if (arg.startsWith("--env="))
             args.environment = arg.slice("--env=".length);
+        else if (arg.startsWith("--endpoint="))
+            args.environment = arg.slice("--endpoint=".length);
         else if (arg === "--dry-run")
             args.dryRun = true;
         else if (arg === "--help" || arg === "-h")

@@ -209,6 +209,20 @@ npx @jitera/connect --env=studio-05
 npx @jitera/connect --env=studio-stage
 ```
 
+## self-hosted deployments
+
+a deployment that is not one of ours has no name to pass. give `login` its
+address instead:
+
+```
+npx @jitera/connect login --endpoint=https://jitera.example.com --install
+```
+
+the address is saved with the sign-in, so later commands read it back without
+the flag. `init` records it in `.jitera.json`, so the repo carries the
+deployment for teammates and for the proxy. `--endpoint` is accepted anywhere
+`--env` is.
+
 ## other flags
 
 ```
@@ -216,4 +230,5 @@ npx @jitera/connect --print         print the resolved endpoints and exit
 npx @jitera/connect --dry-run       report what would change, write nothing
 npx @jitera/connect --uninstall     remove the jitera server
 npx @jitera/connect --skip-skills   write mcp config only
+npx @jitera/connect --endpoint=<url>  name a self-hosted deployment
 ```

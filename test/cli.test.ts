@@ -35,6 +35,18 @@ test("cli prints the endpoints the deployment declares", async () => {
   await studio.close();
 });
 
+test("cli takes a self-hosted deployment address as --endpoint", async () => {
+  const studio = await studioStub();
+  const address = studioUrlOf(studio);
+  const { stdout, code } = await runNode(CLI, { args: ["--print", `--endpoint=${address}`] });
+
+  assert.equal(code, 0);
+  const parsed = JSON.parse(stdout) as { mcpUrl: string; studioUrl: string };
+  assert.equal(parsed.mcpUrl, DEPLOYMENT.mcpUrl);
+  assert.equal(parsed.studioUrl, address);
+  await studio.close();
+});
+
 test("cli reports which studio it could not reach", async () => {
   const studio = await studioStub();
   const dead = studioUrlOf(studio);

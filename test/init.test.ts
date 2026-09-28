@@ -34,6 +34,21 @@ test("init writes both files where it is run", async () => {
   assert.match(readFileSync(join(root, "CLAUDE.md"), "utf8"), /@AGENTS\.md/);
 });
 
+test("init records the deployment address from --endpoint", async () => {
+  const { root } = gitRepo();
+  const { code, stdout } = await runNode(CONNECT, {
+    args: ["init", "--endpoint=https://jitera.example.com"],
+    cwd: root,
+    env: OFFLINE,
+  });
+
+  assert.equal(code, 0, stdout);
+  const marker = JSON.parse(readFileSync(join(root, ".jitera.json"), "utf8")) as {
+    environment: string;
+  };
+  assert.equal(marker.environment, "https://jitera.example.com");
+});
+
 test("init outside a git repository binds the folder it is run in", async () => {
   const dir = isolatedTmpdir();
   const { code, stdout } = await runNode(CONNECT, { args: ["init"], cwd: dir, env: OFFLINE });
