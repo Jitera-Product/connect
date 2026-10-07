@@ -45,12 +45,27 @@ test("the api key itself is never written to the config", () => {
   assert.ok(!written.includes("sk-"), "only the env var name may appear, never a key");
 });
 
-test("a supplied key is written inline so nothing needs exporting", () => {
+test("a supplied key is written as a header so nothing needs exporting", () => {
   const { home, cwd, path } = sandbox();
   codex.install({ scope: "user", home, cwd, mcpUrl: MCP_URL, apiKey: "sk-live" });
   const written = readFileSync(path, "utf8");
-  assert.match(written, /bearer_token = "sk-live"/);
+  assert.match(written, /http_headers = \{ "Authorization" = "Bearer sk-live" \}/);
   assert.ok(!written.includes("bearer_token_env_var"));
+});
+
+test("a supplied key never lands in bearer_token, which codex refuses for a url server", () => {
+  const { home, cwd, path } = sandbox();
+  codex.install({ scope: "user", home, cwd, mcpUrl: MCP_URL, apiKey: "sk-live" });
+  assert.ok(!/^bearer_token\s*=/m.test(readFileSync(path, "utf8")));
+});
+
+test("reinstalling over an inline bearer_token replaces it", () => {
+  const broken = `[mcp_servers.jitera]\nurl = "${MCP_URL}"\nbearer_token = "sk-old"\n`;
+  const { home, cwd, path } = sandbox(broken);
+  codex.install({ scope: "user", home, cwd, mcpUrl: MCP_URL, apiKey: "sk-live" });
+  const written = readFileSync(path, "utf8");
+  assert.ok(!written.includes("sk-old"));
+  assert.ok(!/^bearer_token\s*=/m.test(written));
 });
 
 test("without a key the config falls back to an env var reference", () => {
@@ -130,15 +145,27 @@ test("codex reads skills from the cross-tool agents directory", () => {
   ]);
 });
 
-test("a bound repo pins the project header in the codex config", () => {
+test("a bound repo pins the project header next to the key in one table", () => {
   const { home, cwd, path } = sandbox();
   codex.install({ scope: "user", home, cwd, mcpUrl: MCP_URL, apiKey: "sk", projectUuid: "proj-7" });
   const written = readFileSync(path, "utf8");
+  assert.match(
+    written,
+    /http_headers = \{ "Authorization" = "Bearer sk", "X-Jitera-Project" = "proj-7" \}/
+  );
+  assert.equal(written.match(/http_headers/g)?.length, 1);
+});
+
+test("a bound repo without a key pins only the project header", () => {
+  const { home, cwd, path } = sandbox();
+  codex.install({ scope: "user", home, cwd, mcpUrl: MCP_URL, projectUuid: "proj-7" });
+  const written = readFileSync(path, "utf8");
+  assert.match(written, /bearer_token_env_var = "JITERA_API_KEY"/);
   assert.match(written, /http_headers = \{ "X-Jitera-Project" = "proj-7" \}/);
 });
 
-test("no binding writes no header line", () => {
+test("no key and no binding writes no header line", () => {
   const { home, cwd, path } = sandbox();
-  codex.install({ scope: "user", home, cwd, mcpUrl: MCP_URL, apiKey: "sk" });
+  codex.install({ scope: "user", home, cwd, mcpUrl: MCP_URL });
   assert.ok(!readFileSync(path, "utf8").includes("http_headers"));
 });
